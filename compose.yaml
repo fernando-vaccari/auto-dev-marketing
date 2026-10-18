@@ -1,0 +1,37 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      APP_MODE: ${APP_MODE:-demo}
+      APP_PASSWORD: ${APP_PASSWORD:?Defina APP_PASSWORD no ambiente seguro}
+      APP_TIMEZONE: America/Sao_Paulo
+      PUBLIC_BASE_URL: https://${APP_DOMAIN:?Defina APP_DOMAIN com seu dominio}
+      META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
+      INSTAGRAM_ACCOUNT_ID: ${INSTAGRAM_ACCOUNT_ID:-}
+      META_API_VERSION: ${META_API_VERSION:-v25.0}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-gpt-4o-mini}
+    volumes:
+      - app_data:/data
+    expose:
+      - "8000"
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Defina APP_DOMAIN com seu dominio}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+volumes:
+  app_data:
+  caddy_data:
+  caddy_config:
