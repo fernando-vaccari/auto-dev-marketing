@@ -7,4 +7,4 @@ if __name__ == "__main__":
         raise SystemExit("Defina APP_PASSWORD antes de expor o servidor na rede.")
     uvicorn.run("app.main:create_app", factory=True, host=host,
                 port=int(os.getenv("APP_PORT", "8000")), workers=1,
-                proxy_headers=False, access_log=False)
+                proxy_headers=True, access_log=False)
