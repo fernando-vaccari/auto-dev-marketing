@@ -24,6 +24,8 @@ def main():
         environment = {**os.environ, 'DATA_DIR': directory, 'APP_MODE': 'demo', 'APP_HOST': '127.0.0.1',
                        'APP_PORT': str(port), 'AI_API_KEY': '', 'META_ACCESS_TOKEN': '', 'APP_PASSWORD': ''}
         python = ROOT / '.venv' / 'bin' / 'python'
+        if not python.is_file():
+            python = Path(sys.executable)
         server = subprocess.Popen([str(python), '-m', 'app'], cwd=ROOT, env=environment,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:

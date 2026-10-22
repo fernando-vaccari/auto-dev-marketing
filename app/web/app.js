@@ -2,7 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const state = {posts: [], brand: {}, status: {}, events: [], automation: {}, filter: 'all', view: 'overview', editing: null, dirty: false, calendar: new Date()};
 const labels = {draft: 'Rascunho', scheduled: 'Agendado', publishing: 'Enviando', published: 'Publicado', simulated: 'Simulado', failed: 'Falhou', review_required: 'Conferir no Instagram'};
-const viewLabels = {overview: 'Visão geral', posts: 'Conteúdos', calendar: 'Calendário', automation: 'Automação', brand: 'Minha marca', connection: 'Integração'};
+const viewLabels = {reels: 'Estúdio de Reels', overview: 'Visão geral', posts: 'Conteúdos', calendar: 'Calendário', automation: 'Automação', brand: 'Minha marca', connection: 'Integração'};
 let toastTimer;
 
 function node(tag, className, text) {
@@ -56,6 +56,7 @@ function showView(name) {
   if (name === 'calendar') renderCalendar();
   if (name === 'connection') renderConnection();
   if (name === 'automation') api('/automation').then(data => { state.automation = data; renderAutomation(); }).catch(error => toast(error.message, true));
+  window.dispatchEvent(new CustomEvent('workspace-view', {detail: name}));
   window.scrollTo({top: 0, behavior: 'instant'});
 }
 function badge(post) { return node('span', `badge ${post.status}`, labels[post.status] || post.status); }

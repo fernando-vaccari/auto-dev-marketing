@@ -21,4 +21,10 @@ jobs:
       - run: python -m unittest discover -v
         env:
           REELS_REQUIRE_TOOLS: '1'
-      - run: node --check app/web/app.js && node --check app/web/login.js
+      - run: node --check app/web/app.js && node --check app/web/login.js && node --check app/web/reels.js
+      - name: Install browser test dependencies
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+      - run: python scripts/browser_smoke.py
+      - run: python scripts/reels_browser_smoke.py
