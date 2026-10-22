@@ -91,6 +91,8 @@ def main():
                     if os.getenv('REELS_SCREENSHOT'):
                         page.evaluate('window.scrollTo(0,0)')
                         page.screenshot(path=os.environ['REELS_SCREENSHOT'], full_page=True)
+                    page.get_by_text('Selecionar e revisar cortes', exact=True).click()
+                    page.locator('#studio-selection').select_option('sequential')
                     page.locator('#reels-generate').click()
                     expect(page.locator('#reels-jobs .reels-job')).to_have_count(2,timeout=10000)
                     cancel=page.locator('[data-cancel-id]').first
@@ -101,6 +103,7 @@ def main():
                     assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Overflow na tela móvel'
                     page.set_viewport_size({'width':1440,'height':1000})
                     page.locator('#logout').click()
+                    page.wait_for_url('**/login')
                     expect(page.locator('input[type=password]')).to_be_visible()
                     assert context.request.get(base+'/api/reels/jobs').status==401
                     assert not errors,errors
