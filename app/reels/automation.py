@@ -66,6 +66,9 @@ class ReelAutomation:
             try:
                 values = dict(config['template'])
                 values['cuts_override']=None
+                if config.get('regenerate_script',True):values['script']=None
+                sequence=db.execute('SELECT COUNT(*) FROM reel_slots WHERE schedule_id=?',(schedule_id or '',)).fetchone()[0]-1
+                values['variation']=(values.get('variation',0)+sequence)%100000
                 if config.get('library_mode','selected')=='all' or not values.get('asset_ids'):
                     requested = set(values.get('themes', []))
                     values['asset_ids'] = [a['id'] for a in self.library.assets('video') if not requested or requested.intersection(a['tags'])][-30:]

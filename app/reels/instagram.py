@@ -39,7 +39,7 @@ class ReelMetaClient(MetaClient):
         except (httpx.HTTPError,ValueError):
             raise MetaError('A transferência do vídeo falhou ou excedeu o tempo limite. Nenhuma publicação foi solicitada.') from None
 
-    async def finish_reel(self,identifier):
+    async def finish_reel(self,identifier,before_publish=None):
         for attempt in range(self.poll_attempts):
             data=await self.request('GET',identifier,{'fields':'status_code'})
             state=data.get('status_code')
@@ -49,6 +49,8 @@ class ReelMetaClient(MetaClient):
             if state not in {'IN_PROGRESS'}:raise MetaError('Estado de processamento desconhecido. Confira a Meta.')
             await asyncio.sleep(self.poll_seconds)
         else:raise ProcessingPending('O vídeo ainda está sendo processado pela Meta.')
+        if before_publish is not None and not before_publish():
+            raise MetaError('A autorização foi pausada ou alterada antes da publicação. Nenhum envio final foi solicitado.')
         value=await self.request('POST',f'{self.settings.instagram_id}/media_publish',{'creation_id':identifier},publishing=True)
         return self.identifier(value,publishing=True)
 
@@ -97,6 +99,9 @@ class ReelPublishing:
         if not found:raise ReelError('Publicação não encontrada.')
         if found['status'] in {'published','simulated','processing','review_required'}:
             raise ReelError('Este envio já terminou ou precisa de conferência manual; não será repetido.')
+        if approved and found['container_id'] and found['mode']!=self.mode:
+            self.state(identifier,'review_required',error='Contêiner de uma configuração anterior; confira a conta antes de criar outro envio.')
+            raise ReelError('Este contêiner pertence à configuração anterior e não será reaproveitado em outra conta/modo.')
         if approved and self.library.jobs(identifier)[0]['status']!='ready':
             raise ReelError('Aguarde o Reel ficar pronto e revise antes de aprovar.')
         if approved and self.configuration()['mode']=='live' and not authorize_live:
@@ -164,7 +169,13 @@ class ReelPublishing:
                     container=await client.create_reel(caption)
                     self.state(identifier,'processing',container_id=container)
                     await client.upload_reel(container,path)
-                media=await client.finish_reel(container)
+                def still_authorized():
+                    current=self.configuration()
+                    if not current['enabled'] or self.mode!=delivery['mode']:return False
+                    if delivery['policy']=='automatic' and not delivery['approved']:
+                        return self.automatic_authorized(delivery)
+                    return bool(delivery['approved'])
+                media=await client.finish_reel(container,before_publish=still_authorized)
                 self.state(identifier,'published',media_id=media,error=None)
             except ProcessingPending as error:self.state(identifier,'waiting',error=str(error))
             except MetaError as error:self.state(identifier,'review_required' if error.uncertain else 'failed',error=str(error))

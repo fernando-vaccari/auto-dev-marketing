@@ -80,6 +80,9 @@ class ReelsWebTests(unittest.TestCase):
         self.assertEqual(asset['tags'], ['cidades','magia'])
         self.assertGreater(asset['metadata']['duration'],15)
         self.assertEqual(asset['size_bytes'],self.video.stat().st_size)
+        preview=self.client.get('/api/reels/assets/'+asset['id']+'/preview',headers={'Range':'bytes=0-99'})
+        self.assertEqual(preview.status_code,206)
+        self.assertEqual(preview.content,self.video.read_bytes()[:100])
         self.assertEqual(self.upload(self.music,kind='music').status_code,201)
         self.assertEqual(len(self.client.get('/api/reels/assets').json()),2)
         private = self.library.asset(asset['id'])['relative_path']

@@ -1,6 +1,7 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import os
+import json
 import time
 import unittest
 from unittest.mock import patch
@@ -43,7 +44,10 @@ class NeuralTests(unittest.TestCase):
             with TestClient(create_app(settings,scheduler=False)) as client:
                 self.assertEqual(client.post('/api/reels/voice-preview',json={}).status_code,401)
                 client.post('/api/login',json={'password':settings.password})
-                response=client.post('/api/reels/voice-preview',json={'title':'Prévia de voz','duration':15,'script':'Estas são gravações do projeto. Acompanhe o desenvolvimento.','tts':engine,'voice_id':'pf_dora'})
+                text='Estas são gravações do projeto. Acompanhe o desenvolvimento.'
+                if engine=='kokoro':
+                    text='Estas são gravações do projeto. Este material serve para verificar a duração da narração de um vídeo curto e para conferir que todas as palavras possam ser ouvidas com clareza no resultado. Durante este teste nós incluímos uma quantidade maior de texto, com pausas naturais, para medir o áudio gerado de verdade antes de preparar o vídeo final. Acompanhe o desenvolvimento.'
+                response=client.post('/api/reels/voice-preview',json={'title':'Prévia de voz','duration':15,'script':text,'tts':engine,'voice_id':'pf_dora'})
                 self.assertEqual(response.status_code,202,response.text)
                 identifier=response.json()['id'];deadline=time.monotonic()+90
                 while True:
@@ -52,6 +56,11 @@ class NeuralTests(unittest.TestCase):
                     self.assertLess(time.monotonic(),deadline,job);time.sleep(.1)
                 self.assertEqual(job['status'],'ready',job)
                 self.assertEqual(job['kind'],'voice_preview')
+                if engine=='kokoro':
+                    narration=json.loads((Path(temporary)/'reels/jobs'/identifier/'narration.json').read_text())
+                    self.assertGreaterEqual(len(narration['attempts']),2)
+                    self.assertLessEqual(narration['speech_duration'],14)
+                    self.assertFalse(narration['speed_changed'])
                 self.assertIsNone(job['video_url'])
                 audio=client.get(job['audio_url'])
                 self.assertEqual(audio.status_code,200)

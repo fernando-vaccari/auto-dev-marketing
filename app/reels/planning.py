@@ -189,7 +189,7 @@ def build_plan(library, options):
         cut['timeline_start']=timeline/fps
         timeline+=cut['frames']-overlap
     script=options.script.strip() if options.script else make_script(themes, options.duration)
-    if not options.script and (options.game_name or options.script_style!='informativo' or options.confirmed_facts):
+    if not options.script and (options.game_name or options.script_style!='informativo' or options.confirmed_facts or options.variation or options.cta!='Acompanhe o desenvolvimento.'):
         from .scripts import promotional_script
         script=promotional_script(themes,options)
     return {'version': 1, 'title': options.title, 'duration': options.duration, 'fps': fps,

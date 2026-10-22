@@ -114,3 +114,17 @@ class InstagramTests(unittest.IsolatedAsyncioTestCase):
         await restarted.start()
         try:self.assertEqual(restarted.publishing.history()[0]['status'],'review_required')
         finally:await restarted.close()
+
+    async def test_authorization_revoked_during_processing_prevents_publish_request(self):
+        original=self.handler
+        async def revoke(request):
+            if request.url.path.endswith('/456'):
+                self.service.preferences.set('instagram',self.config|{'enabled':False})
+            return await original(request)
+        def client():
+            return ReelMetaClient(Settings(data_dir=Path(self.temp.name),instagram_id='123',api_version='v26.0'),
+                transport=httpx.MockTransport(revoke),poll_seconds=0,poll_attempts=1)
+        self.pub.client_factory=client
+        with patch('app.reels.instagram.probe',return_value={}):await self.pub.tick()
+        self.assertEqual(self.pub.history()[0]['status'],'failed')
+        self.assertFalse(any(path.endswith('/media_publish') for _,path,_ in self.requests))

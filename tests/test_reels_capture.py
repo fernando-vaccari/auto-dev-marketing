@@ -21,11 +21,12 @@ class Wire:
 
 
 class FakeOBS:
-    def __init__(self):self.active=False;self.calls=[];self.path='';self.directory=''
+    def __init__(self):self.active=False;self.calls=[];self.path='';self.directory='';self.directory_supported=True
     def __enter__(self):return self
     def __exit__(self,*args):pass
     def call(self,name,data=None):
         self.calls.append((name,data))
+        if name=='GetVersion':return {'obsVersion':'31.0','obsWebSocketVersion':'5.5.0','availableRequests':['SetRecordDirectory'] if self.directory_supported else []}
         if name=='GetRecordStatus':return {'outputActive':self.active}
         if name=='GetInputList':return {'inputs':[{'inputName':'Jogo'}]}
         if name=='GetSceneItemList':return {'sceneItems':[{'sourceName':'Jogo','sceneItemEnabled':True}]}
@@ -71,6 +72,9 @@ class CaptureTests(unittest.TestCase):
         with self.assertRaises(ReelError):self.service.capture.start(self.config)
         self.assertNotIn('StopRecord',[c[0] for c in self.obs.calls])
         self.obs.active=False
+        self.obs.directory_supported=False
+        with self.assertRaisesRegex(ReelError,'5.3'):self.service.capture.start(self.config)
+        self.obs.directory_supported=True
         with self.assertRaises(ReelError):self.service.capture.start(self.config|{'game_confirmed':False})
         identifier=self.service.capture.start(self.config)['id']
         self.obs.path='/etc/passwd'
@@ -119,3 +123,16 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(asset['tags'],['cidades'])
             self.assertFalse(self.service.media_gate.locked())
             server.shutdown();thread.join(timeout=2)
+
+    def test_mkv_remux_import_cleans_only_its_temporary_and_keeps_original(self):
+        from app.reels.tools import executable,run
+        identifier=self.service.capture.start(self.config)['id']
+        original=Path(self.obs.directory)/'captura.mkv'
+        run([executable('ffmpeg'),'-v','error','-f','lavfi','-i','testsrc2=size=160x90:rate=30','-t','2','-c:v','libx264','-threads','1',original])
+        self.obs.path=str(original)
+        result=self.service.capture.finish(identifier)
+        self.assertTrue(original.is_file())
+        self.assertEqual(list(original.parent.glob('*.mp4')),[])
+        asset=self.service.library.asset(result['asset_id'])
+        self.assertTrue(self.service.library.asset_path(asset).is_file())
+        self.assertEqual(asset['original_name'],'captura.mp4')

@@ -2,7 +2,7 @@
 (() => {
   const q = id => document.getElementById('reels-' + id);
   const statusNames = {queued:'Na fila', rendering:'Renderizando', ready:'Pronto', failed:'Falhou', cancelled:'Cancelado'};
-  const stageNames = {queued:'Aguardando execução', preflight:'Verificando ferramentas e arquivos', narration:'Gerando narração', cuts:'Editando cortes', compositing:'Montando vídeo e áudio', validation:'Conferindo MP4', ready:'Concluído', failed:'Falha no processamento', interrupted:'Interrompido', cancelled:'Cancelado'};
+  const stageNames = {analysis:'Analisando vídeos', queued:'Aguardando execução', preflight:'Verificando ferramentas e arquivos', narration:'Gerando narração', cuts:'Editando cortes', compositing:'Montando vídeo e áudio', validation:'Conferindo MP4', ready:'Concluído', failed:'Falha no processamento', interrupted:'Interrompido', cancelled:'Cancelado'};
   let jobsVersion = '';
   let active = false, loading = false, config, assets = [], jobs = [], selectedJob = null, detailVersion = '', uploading = false;
   const selected = new Set();
@@ -33,7 +33,14 @@
       row.append(label,info);
       const tags=node('input');tags.value=item.tags.join(', ');tags.maxLength=150;tags.setAttribute('aria-label','Temas de '+item.original_name);
       const save=node('button','secondary','Salvar temas');save.type='button';save.addEventListener('click',()=>busyButton(save,async()=>{await request('/assets/'+item.id,{method:'PATCH',body:{tags:themes(tags.value)}});assets=await request('/assets');drawLibrary();toast('Temas atualizados.');}));
-      row.append(tags,save);container.append(row);
+      row.append(tags,save);
+      const preview=node('button','secondary','Ver vídeo original');preview.type='button';const player=node('video');player.controls=true;player.preload='metadata';player.muted=true;player.hidden=true;
+      preview.addEventListener('click',()=>{player.hidden=!player.hidden;if(!player.hidden&&!player.getAttribute('src'))player.src=`/api/reels/assets/${item.id}/preview`;if(player.hidden)player.pause();});
+      row.append(preview,player);container.append(row);
+    }
+    for(const item of assets.filter(item=>item.kind!=='video')) {
+      const row=node('div','reels-asset');row.append(node('strong','',`${item.kind==='effect'?'Efeito':'Trilha'} · ${item.original_name}`),node('p','help',`${item.metadata.duration.toFixed(1)} s · ${bytes(item.size_bytes)}`));
+      const player=node('audio');player.controls=true;player.preload='none';player.src=`/api/reels/assets/${item.id}/preview`;row.append(player);container.append(row);
     }
     if (!container.children.length) container.append(node('p','help','Importe pelo menos 15 segundos de gravações para começar.'));
     const previous = q('music').value;

@@ -82,6 +82,7 @@ class CaptureStudio:
             inputs=obs.call('GetInputList').get('inputs',[])
             scenes=obs.call('GetSceneList').get('scenes',[])
         return {'connected':True,'version':version.get('obsVersion'),'recording':recording.get('outputActive',False),
+                'websocket_version':version.get('obsWebSocketVersion'),'record_directory_supported':'SetRecordDirectory' in version.get('availableRequests',[]),
                 'owned_capture':self.owned_id,'inputs':inputs,'scenes':scenes,'mode':'assisted'}
 
     def history(self):
@@ -105,6 +106,9 @@ class CaptureStudio:
         if not directory.is_relative_to(self.root.resolve()):raise ReelError('Diretório de captura inválido.')
         directory.mkdir(parents=True,exist_ok=True)
         with self.obs() as obs:
+            capabilities=obs.call('GetVersion')
+            if 'SetRecordDirectory' not in capabilities.get('availableRequests',[]):
+                raise ReelError('Atualize OBS/obs-websocket para uma versão com SetRecordDirectory (v5.3 ou superior).')
             if obs.call('GetRecordStatus').get('outputActive'):raise ReelError('Já existe gravação no OBS. Não iremos interrompê-la.')
             inputs={i['inputName'] for i in obs.call('GetInputList').get('inputs',[])}
             if config['input_name'] not in inputs:raise ReelError('A fonte escolhida não existe no OBS.')
@@ -130,6 +134,7 @@ class CaptureStudio:
         with self.lock:
             if self.owned_id != identifier:raise ReelError('Esta instância não iniciou essa gravação; confira o OBS manualmente.')
             config=next(c['config'] for c in self.history() if c['id']==identifier)
+            converted=None
             try:
                 with self.obs() as obs:
                     result=obs.call('StopRecord')
@@ -137,14 +142,15 @@ class CaptureStudio:
                 expected=(self.root/config['directory']).resolve()
                 if not path.is_relative_to(expected) or not path.is_file() or path.is_symlink():
                     raise ReelError('O OBS retornou arquivo fora do diretório de captura autorizado ou indisponível.')
-                self.service.require_space(path.stat().st_size)
+                self.service.require_space(path.stat().st_size*(2 if path.suffix.lower()=='.mkv' else 1))
+                original_name=path.stem+'.mp4' if path.suffix.lower()=='.mkv' else path.name
                 probe(path)
                 if path.suffix.lower()=='.mkv':
                     converted=expected/(uuid.uuid4().hex+'.mp4')
                     run([executable('ffmpeg'),'-nostdin','-v','error','-protocol_whitelist','file,pipe','-i',path,
                          '-map','0:v:0','-map','0:a?','-c','copy','-movflags','+faststart',converted],timeout=120)
                     path=converted
-                asset=self.library.import_media(path,tags=config['themes'])
+                asset=self.library.import_media(path,tags=config['themes'],original_name=original_name)
                 with self.library.db.connect() as db:
                     db.execute("UPDATE reel_captures SET status='imported',asset_id=?,updated_at=? WHERE id=?",(asset['id'],now_iso(),identifier))
                 return {'asset_id':asset['id']}
@@ -154,8 +160,14 @@ class CaptureStudio:
                     db.execute("UPDATE reel_captures SET status='review_required',error=?,updated_at=? WHERE id=?",(message[:500],now_iso(),identifier))
                 raise ReelError(message) from None
             finally:
-                self.owned_id=None
-                self.service.media_gate.release()
+                try:
+                    if converted is not None:converted.unlink(missing_ok=True)
+                except OSError:
+                    with self.library.db.connect() as db:
+                        db.execute('UPDATE reel_captures SET error=? WHERE id=?',('A cópia foi preservada; o temporário de remux precisa de limpeza manual.',identifier))
+                finally:
+                    self.owned_id=None
+                    self.service.media_gate.release()
 
     def tick(self):
         if self.owned_id and time.monotonic()>=self.deadline:

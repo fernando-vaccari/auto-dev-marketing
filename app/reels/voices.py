@@ -32,6 +32,8 @@ def generate(text, output, *, directory, voice='pf_dora', threads=4):
     if voice not in engine.get_voices():raise ReelError('A voz escolhida não existe no pacote de modelos instalado.')
     audio,rate=engine.create(text,voice=voice,speed=1.0,lang='pt-br',trim=True)
     if not len(audio) or not np.isfinite(audio).all():raise ReelError('A voz neural gerou áudio vazio ou inválido.')
+    peak=float(np.max(np.abs(audio)))
+    if peak>.98:audio=audio*(.98/peak)
     with wave.open(str(output),'wb') as target:
         target.setparams((1,2,int(rate),0,'NONE','not compressed'))
         target.writeframes((np.clip(audio,-.98,.98)*32767).astype('<i2').tobytes())

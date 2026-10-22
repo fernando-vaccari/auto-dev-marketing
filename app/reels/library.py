@@ -33,6 +33,8 @@ class ReelLibrary:
         self.data_dir = Path(data_dir).resolve()
         self.db = Database(self.data_dir)
         self.root = self.data_dir / 'reels'
+        self.root.mkdir(parents=True,exist_ok=True,mode=0o700)
+        self.root.chmod(0o700)
         self.imports = self.root / 'imports'
         self.imports.mkdir(parents=True, exist_ok=True)
         (self.root / 'jobs').mkdir(exist_ok=True)

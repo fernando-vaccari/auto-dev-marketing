@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from .library import VIDEO_EXTENSIONS, MUSIC_EXTENSIONS, normalize_themes
 from .planning import RenderOptions, build_plan
 from .speech import choose_voice
+from .voices import VOICES
 from .tools import ReelError
 from .service import MIB
 
@@ -74,6 +75,7 @@ class ScheduleConfig(BaseModel):
     times: list[str] = Field(default=['12:30','19:30'],min_length=1,max_length=4)
     timezone: str = 'America/Sao_Paulo'
     quantity: int = Field(default=1,ge=1,le=3)
+    regenerate_script: bool = True
     library_mode: str = Field(default='all',pattern='^(all|selected)$')
     policy: str = Field(default='approval',pattern='^(manual|approval|automatic)$')
     auto_authorized: bool = False
@@ -187,6 +189,15 @@ def router(service):
             replace(result,asset_ids=('preview',)).validate()
         else:result.validate()
         return result
+
+    @api.get('/summary')
+    def summary():
+        with library.db.connect() as db:
+            ready=db.execute("SELECT COUNT(*) FROM reel_jobs WHERE status='ready' AND json_extract(config_json,'$._task') IS NULL").fetchone()[0]
+            queued=db.execute("SELECT COUNT(*) FROM reel_jobs WHERE status IN ('queued','rendering')").fetchone()[0]
+            rules=db.execute("SELECT COUNT(*) FROM reel_schedules WHERE json_extract(config_json,'$.enabled')=1").fetchone()[0]
+            deliveries={row['status']:row['n'] for row in db.execute('SELECT status,COUNT(*) AS n FROM reel_deliveries GROUP BY status')}
+        return {'ready':ready,'queue':queued,'rules_enabled':rules,'published':deliveries.get('published',0),'simulated':deliveries.get('simulated',0)}
 
     @api.get('/preferences')
     def preferences():
@@ -343,7 +354,7 @@ def router(service):
                 pass
         from .cinema import PRESETS,CAPTIONS,SCRIPT_STYLES
         return {'presets': PRESETS,'caption_styles':list(CAPTIONS),'script_styles':sorted(SCRIPT_STYLES),
-                'voice_catalog':__import__('app.reels.voices',fromlist=['VOICES']).VOICES,
+                'voice_catalog':VOICES,
                 'video_limit_bytes': service.settings.reels_upload_mb * MIB,
                 'music_limit_bytes': service.settings.reels_music_mb * MIB, 'storage': service.storage(),
                 'voices': voices, 'publishing_enabled': service.publishing.configuration()['enabled'] and service.publishing.configuration()['mode']=='live'}
@@ -351,6 +362,14 @@ def router(service):
     @api.get('/assets')
     def assets():
         return [asset_view(asset) for asset in library.assets()]
+
+    @api.get('/assets/{identifier}/preview')
+    def asset_preview(identifier: str):
+        asset=library.asset(identifier)
+        path=library.asset_path(asset)
+        types={'.mp4':'video/mp4','.mov':'video/quicktime','.webm':'video/webm','.mp3':'audio/mpeg',
+               '.wav':'audio/wav','.ogg':'audio/ogg','.flac':'audio/flac','.m4a':'audio/mp4','.aac':'audio/aac'}
+        return FileResponse(path,media_type=types.get(path.suffix.lower(),'application/octet-stream'))
 
     @api.patch('/assets/{identifier}')
     def update_tags(identifier: str, body: AssetTags):

@@ -61,7 +61,7 @@ def doctor():
         binary = result['ffmpeg']['path']
         filters = run([binary, '-hide_banner', '-filters']).decode()
         encoders = run([binary, '-hide_banner', '-encoders']).decode()
-        result['filters'] = {name: name in filters for name in ('scale', 'pad', 'ass', 'zoompan', 'fade', 'amix', 'loudnorm')}
+        result['filters'] = {name: name in filters for name in ('scale', 'pad', 'ass', 'zoompan', 'fade', 'amix', 'loudnorm','xfade','sidechaincompress','alimiter','silenceremove','boxblur','vignette','eq','unsharp')}
         result['encoders'] = {name: name in encoders for name in ('libx264', 'aac')}
     result['network_required_for_render'] = False
     return result

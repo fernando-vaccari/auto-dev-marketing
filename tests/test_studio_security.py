@@ -17,7 +17,7 @@ class StudioSecurityTests(unittest.TestCase):
     def login(self):self.client.post('/api/login',json={'password':self.settings.password})
 
     def test_new_routes_are_authenticated_and_origin_protected(self):
-        for method,path in [('GET','preferences'),('PUT','preferences'),('GET','instagram/config'),('PUT','instagram/config'),('POST','instagram/check'),('GET','deliveries'),('POST','voice-preview'),('POST','analyze'),('GET','capture/package'),('POST','capture/start'),('POST','capture/unknown/stop'),('GET','schedules'),('POST','schedules'),('GET','schedule-history')]:
+        for method,path in [('GET','assets/'+'a'*32+'/preview'),('GET','summary'),('GET','preferences'),('PUT','preferences'),('GET','instagram/config'),('PUT','instagram/config'),('POST','instagram/check'),('GET','deliveries'),('POST','voice-preview'),('POST','analyze'),('GET','capture/package'),('POST','capture/start'),('POST','capture/unknown/stop'),('GET','schedules'),('POST','schedules'),('GET','schedule-history')]:
             with self.subTest(path=path):self.assertEqual(self.client.request(method,'/api/reels/'+path).status_code,401)
         self.login()
         self.assertEqual(self.client.put('/api/reels/instagram/config',json={},headers={'Origin':'https://evil.invalid'}).status_code,403)
@@ -51,7 +51,9 @@ class StudioSecurityTests(unittest.TestCase):
         (directory/'cut-000.mp4').write_bytes(b'temporary');(directory/'deliverables'/'reel.mp4').write_bytes(b'keep')
         original=library.imports/'original.mp4';original.write_bytes(b'original')
         self.assertEqual(self.client.post(f'/api/reels/jobs/{identifier}/cleanup').status_code,409)
+        self.assertEqual(self.client.get('/api/reels/summary').json()['queue'],1)
         library.update_job(identifier,'ready','ready',100)
+        self.assertEqual(self.client.get('/api/reels/summary').json()['ready'],1)
         result=self.client.post(f'/api/reels/jobs/{identifier}/cleanup?path=/etc/passwd')
         self.assertEqual(result.status_code,200,result.text)
         self.assertFalse((directory/'speech').exists());self.assertFalse((directory/'cut-000.mp4').exists())

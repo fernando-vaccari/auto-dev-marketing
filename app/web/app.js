@@ -350,6 +350,7 @@ async function init() {
     $('#schedule-zone').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone + ' (seu navegador)';
     $('#generation-note').textContent = state.status.ai_enabled ? 'A IA vai preparar uma legenda e uma arte. Revise todas as informações antes de publicar.' : 'Vamos usar um modelo local de texto e gerar uma arte JPEG. Personalize a legenda antes de aprovar.';
     renderBrand(); renderConnection(); await refresh();
+    window.dispatchEvent(new CustomEvent('app-ready',{detail:state.status}));
     setInterval(() => { if (!document.hidden) refresh().catch(() => {}); }, 15000);
   } catch (error) { toast('Não foi possível carregar o painel. ' + error.message, true); }
 }

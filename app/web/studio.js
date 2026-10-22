@@ -110,12 +110,14 @@
     cutReview=plan.cuts.map(cut=>({asset_id:cut.asset_id,source_start:cut.source_start,duration:cut.duration}));
     const assets=window.AutoPostsReels.assets();s('cuts').replaceChildren();
     cutReview.forEach((cut,index)=>{
-      const row=node('div','studio-cuts-row');row.append(node('strong','',assets.find(a=>a.id===cut.asset_id)?.original_name||cut.asset_id));
+      const row=node('div','studio-cuts-row');const heading=node('strong','',assets.find(a=>a.id===cut.asset_id)?.original_name||cut.asset_id);
+      const player=node('video','studio-cut-player');player.controls=true;player.preload='metadata';player.muted=true;player.hidden=true;
+      const preview=button('Ver trecho',async()=>{const start=Number(document.querySelector(`[data-cut-start="${index}"]`).value);const duration=Number(document.querySelector(`[data-cut-duration="${index}"]`).value);if(!Number.isFinite(start+duration)||start<0||duration<=0)throw new Error('Informe um intervalo válido.');player.hidden=false;player.onloadedmetadata=()=>{player.currentTime=Math.min(start,Math.max(0,player.duration-.1));};player.ontimeupdate=()=>{if(player.currentTime>=start+duration)player.pause();};player.src=`/api/reels/assets/${cut.asset_id}/preview#t=${start},${start+duration}`;await player.play();});heading.append(preview);row.append(heading);
       for(const [key,label] of [['source_start','Início (s)'],['duration','Duração (s)']]){
         const field=node('label','',label);const input=node('input');input.type='number';input.min=key==='duration'?'0.033':'0';input.step='0.001';input.value=cut[key].toFixed(3);
         input.dataset[key==='duration'?'cutDuration':'cutStart']=String(index);field.append(input);row.append(field);
       }
-      s('cuts').append(row);
+      row.append(player);s('cuts').append(row);
     });
     s('analysis-status').textContent=plan.warning||'Cortes preparados. Ajuste intervalos reais preservando a duração total.';
   });
@@ -125,10 +127,10 @@
     await request('/capture/config',{method:'PUT',body});s('obs-password').value='';toast('Conexão OBS salva; senha existente preservada quando vazia.');
   });});
   on('obs-check',async()=>{
-    const result=await request('/capture/status');s('obs-status').textContent=`OBS ${result.version} conectado · ${result.recording?'gravando':'pronto'} · captura assistida`;
+    const result=await request('/capture/status');s('obs-status').textContent=`OBS ${result.version} conectado · ${result.record_directory_supported?(result.recording?'gravando':'pronto para captura assistida'):'atualize obs-websocket para v5.3+ com controle de diretório'}`;
     s('obs-scene').replaceChildren(...result.scenes.map(scene=>new Option(scene.sceneName,scene.sceneName)));
     s('obs-source').replaceChildren(...result.inputs.map(input=>new Option(input.inputName,input.inputName)));
-    captureId=result.owned_capture;s('capture-stop').disabled=!captureId;
+    captureId=result.owned_capture;s('capture-stop').disabled=!captureId;s('capture-start').disabled=!result.record_directory_supported;
   });
   s('capture-form').addEventListener('submit',event=>{event.preventDefault();action(s('capture-start'),async()=>{
     const body={input_name:s('obs-source').value,scene_name:s('obs-scene').value,sequence:s('sequence').value,
@@ -136,8 +138,9 @@
     const result=await request('/capture/start',{method:'POST',body});captureId=result.id;s('capture-stop').disabled=false;s('obs-status').textContent=result.instruction;await refreshParts();
   });});
   on('capture-stop',async()=>{if(!captureId)throw new Error('Consulte a conexão para identificar a gravação desta instância.');await request(`/capture/${captureId}/stop`,{method:'POST'});captureId=null;s('capture-stop').disabled=true;s('obs-status').textContent='Gravação encerrada e importada.';await window.AutoPostsReels.enter();});
+  s('weekdays').addEventListener('change',()=>{s('schedule-days').value=[...s('weekdays').querySelectorAll('input[type=checkbox]:checked')].map(input=>input.value).join(',');});
   s('schedule-form').addEventListener('submit',event=>{event.preventDefault();action(event.submitter,async()=>{
-    const body={name:s('schedule-name').value,enabled:s('schedule-enabled').checked,days:split(s('schedule-days').value).map(Number),times:split(s('schedule-times').value),timezone:'America/Sao_Paulo',quantity:Number(s('schedule-quantity').value),policy:s('schedule-policy').value,library_mode:s('schedule-library').value,auto_authorized:s('schedule-authorized').checked,template:window.AutoPostsReels.payload()};
+    const body={name:s('schedule-name').value,enabled:s('schedule-enabled').checked,days:split(s('schedule-days').value).map(Number),times:split(s('schedule-times').value),timezone:'America/Sao_Paulo',quantity:Number(s('schedule-quantity').value),policy:s('schedule-policy').value,regenerate_script:s('schedule-script').checked,library_mode:s('schedule-library').value,auto_authorized:s('schedule-authorized').checked,template:window.AutoPostsReels.payload()};
     const id=s('schedule-id').value;await request('/schedules'+(id?'/'+id:''),{method:id?'PUT':'POST',body});toast('Regra salva.');await refreshParts();
   });});
   on('schedule-new',async()=>{s('schedule-id').value='';s('schedule-name').value='Reels do RPG';s('schedule-enabled').checked=false;s('schedule-authorized').checked=false;});
@@ -145,7 +148,7 @@
   function drawSchedules(rows,history){
     savedSchedules=rows;s('schedules').replaceChildren();
     for(const row of rows){const c=row.config;const item=node('article','studio-history-row');item.append(node('strong','',c.name),node('p','',`${c.enabled?'Ativa':'Pausada'} · ${c.times.join(' / ')} · ${c.quantity} Reel(s) por horário · ${c.policy==='automatic'?'Automática autorizada':c.policy==='approval'?'Aguardar aprovação':'Manual'}`));
-      item.append(button('Editar',async()=>{s('schedule-id').value=row.id;s('schedule-name').value=c.name;s('schedule-days').value=c.days.join(',');s('schedule-times').value=c.times.join(',');s('schedule-quantity').value=c.quantity;s('schedule-policy').value=c.policy;s('schedule-library').value=c.library_mode||'selected';s('schedule-enabled').checked=c.enabled;s('schedule-authorized').checked=c.auto_authorized;applyCreation(c.template);toast('Regra carregada. Edite e salve para aplicar.');}),
+      item.append(button('Editar',async()=>{s('schedule-id').value=row.id;s('schedule-name').value=c.name;s('schedule-days').value=c.days.join(',');s('weekdays').querySelectorAll('input[type=checkbox]').forEach(input=>{input.checked=c.days.includes(Number(input.value));});s('schedule-times').value=c.times.join(',');s('schedule-quantity').value=c.quantity;s('schedule-policy').value=c.policy;s('schedule-script').checked=c.regenerate_script!==false;s('schedule-library').value=c.library_mode||'selected';s('schedule-enabled').checked=c.enabled;s('schedule-authorized').checked=c.auto_authorized;applyCreation(c.template);toast('Regra carregada. Edite e salve para aplicar.');}),
         button(c.enabled?'Pausar':'Ativar',async()=>{await request('/schedules/'+row.id,{method:'PUT',body:{...c,enabled:!c.enabled}});await refreshParts();}),
         button('Executar agora',async()=>{const result=await request(`/schedules/${row.id}/run`,{method:'POST'});await refreshParts();if(!result.job_id)throw new Error('O horário registrou uma falha. Confira o histórico.');toast('Reel adicionado à fila.');}),
         button('Excluir regra',async()=>{await request('/schedules/'+row.id,{method:'DELETE'});await refreshParts();}));s('schedules').append(item);
@@ -163,6 +166,10 @@
   on('delivery-register',async()=>{const identifier=s('delivery-job').value;if(!identifier)throw new Error('Escolha um Reel concluído.');await request(`/jobs/${identifier}/delivery`,{method:'POST'});await refreshParts();toast('Publicação preparada para revisão.');});
   on('delivery-approve',async()=>{if(!s('delivery-reviewed').checked)throw new Error('Assista ao Reel e confirme a revisão antes de aprovar.');const identifier=s('delivery-job').value;
     await request(`/jobs/${identifier}/approval`,{method:'POST',body:{approved:true,authorize_live:s('delivery-live').checked}});s('delivery-reviewed').checked=false;s('delivery-live').checked=false;await refreshParts();toast(instagram.mode==='demo'?'Simulação autorizada.':'Envio autorizado. Acompanhe o histórico.');});
+  let overviewAuth=false;
+  async function overview(){if(!overviewAuth||document.hidden)return;const summary=await request('/summary');s('overview-summary').textContent=`${summary.ready} Reel(s) pronto(s) · ${summary.queue} tarefa(s) na fila/em execução · ${summary.rules_enabled} regra(s) ativa(s) · ${summary.published} publicação(ões) confirmada(s) · ${summary.simulated} simulação(ões).`;}
+  window.addEventListener('app-ready',event=>{overviewAuth=event.detail.auth_enabled;overview().catch(()=>{});});
+  setInterval(()=>{if(state.view==='overview')overview().catch(()=>{});},15000);
   s('delivery-job').addEventListener('change',()=>{s('delivery-reviewed').checked=false;s('delivery-live').checked=false;});
   function drawDeliveries(rows){
     const old=s('delivery-job').value;const ready=window.AutoPostsReels.jobs().filter(job=>job.status==='ready'&&job.kind==='reel');

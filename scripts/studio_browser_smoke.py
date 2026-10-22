@@ -46,7 +46,7 @@ def main():
                     browser=p.chromium.launch(**options);context=browser.new_context(viewport={'width':1440,'height':1000},accept_downloads=True)
                     page=context.new_page();errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
                     page.goto(base);page.locator('input[type=password]').fill(environment['APP_PASSWORD']);page.locator('button[type=submit]').click()
-                    page.locator('[data-view=reels]').click();expect(page.locator('#reels-workspace')).to_be_visible()
+                    page.locator('.nav-item[data-view=reels]').click();expect(page.locator('#reels-workspace')).to_be_visible()
                     def tab(name):page.locator(f'#studio-tabs button[data-studio-tab={name}]').click()
                     expect(page.locator('#reels-voice')).to_have_value('kokoro')
                     tab('voice');page.locator('#studio-preview').click();expect(page.locator('#studio-preview-status')).to_contain_text('Prévia pronta',timeout=120000)
@@ -64,6 +64,8 @@ def main():
                     page.get_by_text('Selecionar e revisar cortes',exact=True).click();page.locator('#studio-analyze').click()
                     expect(page.locator('#studio-analysis-status')).to_contain_text('Análise técnica concluída',timeout=120000)
                     page.locator('#studio-review-cuts').click();expect(page.locator('[data-cut-start]').first).to_be_visible()
+                    page.locator('.studio-cuts-row').first.get_by_role('button',name='Ver trecho').click()
+                    expect(page.locator('.studio-cut-player').first).to_be_visible()
                     with page.expect_response(lambda response:response.url.endswith('/api/reels/jobs') and response.request.method=='POST') as created:
                         page.locator('#reels-generate').click()
                     reel_id=created.value.json()['id']

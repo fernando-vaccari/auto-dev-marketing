@@ -33,7 +33,10 @@ class ReelAutomationTests(unittest.TestCase):
             self.assertEqual(len(restarted.history()),1)
             restarted.tick(datetime(2026,10,22,22,30,tzinfo=timezone.utc))
             self.assertEqual(len(restarted.history()),2)
-            self.assertEqual(len(self.service.library.jobs()),2)
+            jobs=self.service.library.jobs()
+            self.assertEqual(len(jobs),2)
+            self.assertNotEqual(jobs[0]['config']['variation'],jobs[1]['config']['variation'])
+            self.assertTrue(all(job['config']['script'] is None for job in jobs))
         with self.service.library.db.connect() as db:
             rows=list(db.execute('SELECT * FROM reel_deliveries'))
         self.assertEqual(len(rows),2)
