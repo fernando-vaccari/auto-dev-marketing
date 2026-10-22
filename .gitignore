@@ -10,17 +10,14 @@ test-results/
 .coverage
 
 # Gameplays, trilhas, vozes e modelos locais nunca vão para o Git.
-*.mp4
-*.MP4
-*.mov
-*.MOV
-*.webm
-*.WebM
-*.wav
-*.mp3
-*.m4a
-*.ogg
-*.flac
-*.aac
+*.[mM][pP]4
+*.[mM][oO][vV]
+*.[wW][eE][bB][mM]
+*.[wW][aA][vV]
+*.[mM][pP]3
+*.[mM]4[aA]
+*.[oO][gG][gG]
+*.[fF][lL][aA][cC]
+*.[aA][aA][cC]
 *.onnx
 *.onnx.json

@@ -41,6 +41,19 @@ class ReelLibraryTests(unittest.TestCase):
         self.assertTrue(self.library.asset_path(second).exists())
         self.assertEqual(len(self.library.assets()), 1)
 
+    def test_corrupted_private_copy_is_rejected_and_reimport_restores_it(self):
+        source = self.root / 'capture.mp4'
+        source.write_bytes(b'original fixture bytes')
+        with patch('app.reels.library.probe', return_value=self.metadata):
+            asset = self.library.import_media(source)
+            stored = self.library.asset_path(asset)
+            stored.write_bytes(b'corrupted bytes')
+            with self.assertRaisesRegex(ReelError, 'corrompida'):
+                self.library.asset_path(asset, verify=True)
+            restored = self.library.import_media(source)
+        self.assertEqual(restored['id'], asset['id'])
+        self.assertEqual(self.library.asset_path(restored, verify=True).read_bytes(), source.read_bytes())
+
     def test_invalid_media_does_not_remain_in_library(self):
         path = self.root / 'fake.mp4'
         path.write_bytes(b'not a video')

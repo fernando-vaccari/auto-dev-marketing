@@ -72,10 +72,17 @@ class ReelLibrary:
             raise ReelError(f'Mídia não encontrada ou tipo incorreto: {asset_id}')
         return value
 
-    def asset_path(self, asset):
+    def asset_path(self, asset, verify=False):
         path = (self.root / asset['relative_path']).resolve()
         if not path.is_relative_to(self.imports.resolve()) or not path.is_file():
             raise ReelError('A cópia privada da mídia não está disponível.')
+        if verify:
+            digest = hashlib.sha256()
+            with path.open('rb') as file:
+                while chunk := file.read(1024 * 1024):
+                    digest.update(chunk)
+            if digest.hexdigest() != asset['sha256']:
+                raise ReelError('A cópia importada foi modificada ou corrompida. Importe novamente o arquivo original.')
         return path
 
     def assets(self, kind=None):
@@ -115,6 +122,11 @@ class ReelLibrary:
                 existing = self.asset_dict(db.execute('SELECT * FROM reel_assets WHERE kind=? AND sha256=?', (kind, sha)).fetchone())
                 if existing:
                     merged = sorted(set(existing['tags']) | set(tags))
+                    stored = (self.root / existing['relative_path']).resolve()
+                    if not stored.is_relative_to(self.imports.resolve()):
+                        raise ReelError('Caminho privado inválido no registro de mídia.')
+                    # Também restaura uma cópia privada perdida/corrompida a partir do original verificado.
+                    os.replace(temporary, stored)
                     db.execute('UPDATE reel_assets SET tags_json=? WHERE id=?', (json.dumps(merged), existing['id']))
                     existing['tags'] = merged
                     return existing
