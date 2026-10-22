@@ -26,11 +26,13 @@ class ReelStudio:
         self.library = library
         self.progress = progress or (lambda value: None)
 
-    def render(self, options):
+    def render(self, options, job_id=None):
+        supervised = job_id is not None
         options.validate()
         with render_lock(self.library.root):
             self.library.recover_interrupted()
-            job_id = self.library.create_job(options.to_dict())
+            job_id = job_id or self.library.create_job(options.to_dict())
+            self.library.begin_job(job_id)
             directory = self.library.root / 'jobs' / job_id
             commands = []
             started = time.monotonic()
@@ -130,7 +132,8 @@ class ReelStudio:
                 return report
             except BaseException as exc:
                 message = 'Renderização interrompida pelo usuário.' if isinstance(exc, KeyboardInterrupt) else str(exc)
-                self.library.update_job(job_id, 'failed', 'failed', 0, error=message)
+                if not (supervised and isinstance(exc, KeyboardInterrupt)):
+                    self.library.update_job(job_id, 'failed', 'failed', 0, error=message)
                 if isinstance(exc, (ReelError, KeyboardInterrupt)):
                     raise
                 raise ReelError(f'Falha interna no job {job_id}. Consulte o histórico e render.log: {type(exc).__name__}') from None

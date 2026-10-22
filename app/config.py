@@ -19,6 +19,14 @@ class Settings:
     ai_key: str = ""
     ai_model: str = "gpt-4o-mini"
     scheduler_seconds: float = 15
+    reels_upload_mb: int = 512
+    reels_music_mb: int = 64
+    reels_storage_mb: int = 8192
+    reels_min_free_mb: int = 1024
+    reels_threads: int = 4
+    reels_queue_limit: int = 3
+    reels_timeout_seconds: int = 900
+    reels_file_limit_mb: int = 512
 
     @property
     def delivery_key(self):
@@ -37,9 +45,22 @@ class Settings:
             api_version=os.getenv("META_API_VERSION", "v25.0"),
             ai_key=os.getenv("AI_API_KEY", ""),
             ai_model=os.getenv("AI_MODEL", "gpt-4o-mini"),
+            reels_upload_mb=int(os.getenv('REELS_UPLOAD_MB', '512')),
+            reels_music_mb=int(os.getenv('REELS_MUSIC_MB', '64')),
+            reels_storage_mb=int(os.getenv('REELS_STORAGE_MB', '8192')),
+            reels_min_free_mb=int(os.getenv('REELS_MIN_FREE_MB', '1024')),
+            reels_threads=int(os.getenv('REELS_THREADS', '4')),
+            reels_queue_limit=int(os.getenv('REELS_QUEUE_LIMIT', '3')),
+            reels_timeout_seconds=int(os.getenv('REELS_TIMEOUT_SECONDS', '900')),
+            reels_file_limit_mb=int(os.getenv('REELS_FILE_LIMIT_MB', '512')),
         )
 
     def validate(self):
+        if not 1 <= self.reels_threads <= 8 or not 1 <= self.reels_queue_limit <= 10:
+            raise ValueError('REELS_THREADS deve ser 1–8 e REELS_QUEUE_LIMIT, 1–10.')
+        if min(self.reels_upload_mb, self.reels_music_mb, self.reels_storage_mb,
+               self.reels_timeout_seconds, self.reels_file_limit_mb) <= 0 or self.reels_min_free_mb < 0:
+            raise ValueError('Os limites de Reels devem ser positivos; a reserva de disco pode ser zero.')
         if self.mode not in {"demo", "live"}:
             raise ValueError("APP_MODE deve ser demo ou live.")
         ZoneInfo(self.timezone)

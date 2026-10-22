@@ -55,6 +55,12 @@ class ReelLibrary:
                     created_at TEXT NOT NULL
                 );
             ''')
+            db.execute('BEGIN IMMEDIATE')
+            columns = {row['name'] for row in db.execute('PRAGMA table_info(reel_jobs)')}
+            if 'origin' not in columns:
+                db.execute("ALTER TABLE reel_jobs ADD COLUMN origin TEXT NOT NULL DEFAULT 'cli'")
+            if 'cancel_requested' not in columns:
+                db.execute('ALTER TABLE reel_jobs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0')
 
     @staticmethod
     def asset_dict(row):
@@ -90,7 +96,7 @@ class ReelLibrary:
             rows = db.execute('SELECT * FROM reel_assets WHERE (? IS NULL OR kind=?) ORDER BY created_at', (kind, kind))
             return [self.asset_dict(row) for row in rows]
 
-    def import_media(self, source, kind='video', tags=()):
+    def import_media(self, source, kind='video', tags=(), original_name=None):
         path = Path(source).expanduser().resolve()
         suffix = path.suffix.lower()
         if kind not in {'video', 'music'}:
@@ -134,18 +140,30 @@ class ReelLibrary:
                 os.replace(temporary, self.imports / filename)
                 asset_id = uuid.uuid4().hex
                 db.execute('INSERT INTO reel_assets VALUES (?,?,?,?,?,?,?,?)', (
-                    asset_id, kind, path.name, 'imports/' + filename, sha,
+                    asset_id, kind, original_name or path.name, 'imports/' + filename, sha,
                     json.dumps(tags or (['gameplay'] if kind == 'video' else [])), json.dumps(metadata), now_iso()))
             return self.asset(asset_id)
         finally:
             temporary.unlink(missing_ok=True)
 
-    def create_job(self, config):
+    def create_job(self, config, origin='cli', queue_limit=None):
         job_id = uuid.uuid4().hex
         with self.db.connect() as db:
-            db.execute('INSERT INTO reel_jobs VALUES (?,\'queued\',0,\'queued\',?,NULL,NULL,?,?)',
-                       (job_id, json.dumps(config, ensure_ascii=False), now_iso(), now_iso()))
+            db.execute('BEGIN IMMEDIATE')
+            if queue_limit is not None:
+                count = db.execute("SELECT COUNT(*) FROM reel_jobs WHERE origin='web' AND status IN ('queued','rendering')").fetchone()[0]
+                if count >= queue_limit:
+                    raise ReelError('A fila de Reels está cheia. Aguarde um render terminar.')
+            db.execute("""INSERT INTO reel_jobs(id,status,progress,stage,config_json,created_at,updated_at,origin)
+                          VALUES (?,'queued',0,'queued',?,?,?,?)""",
+                       (job_id, json.dumps(config, ensure_ascii=False), now_iso(), now_iso(), origin))
         return job_id
+
+    def begin_job(self, job_id):
+        with self.db.connect() as db:
+            result = db.execute("UPDATE reel_jobs SET status='rendering',updated_at=? WHERE id=? AND status='queued' AND cancel_requested=0", (now_iso(), job_id))
+            if not result.rowcount:
+                raise ReelError('O job não está disponível para renderização.')
 
     def update_job(self, job_id, status, stage, progress, detail='', output_path=None, error=None):
         with self.db.connect() as db:

@@ -1,7 +1,16 @@
 {$APP_DOMAIN} {
 	encode zstd gzip
-	request_body {
-		max_size 9MB
+	@reels_upload path /api/reels/assets
+	handle @reels_upload {
+		request_body {
+			max_size {$REELS_PROXY_UPLOAD_LIMIT:513MB}
+		}
+		reverse_proxy app:8000
 	}
-	reverse_proxy app:8000
+	handle {
+		request_body {
+			max_size 9MB
+		}
+		reverse_proxy app:8000
+	}
 }

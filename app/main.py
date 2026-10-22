@@ -23,6 +23,9 @@ from .config import Settings
 from .content import ContentError, generate_content, render_image
 from .db import Database
 from .meta import MetaError
+from .reels.api import router as reels_router
+from .reels.service import ReelService
+from .reels.tools import ReelError
 from .publisher import Publisher
 
 WEB = Path(__file__).parent / "web"
@@ -75,7 +78,7 @@ class AutomationConfig(StrictModel):
     approved: bool = False
 
 
-def create_app(settings=None, *, scheduler=True, meta=None):
+def create_app(settings=None, *, scheduler=True, meta=None, reels_worker=True):
     config = settings or Settings.from_env()
     config.validate()
     db = Database(config.data_dir)
@@ -93,6 +96,7 @@ def create_app(settings=None, *, scheduler=True, meta=None):
             session_key = secrets.token_bytes(32)
             file.write(session_key)
     session_key = hmac.new(session_key, config.password.encode(), hashlib.sha256).digest()
+    reels = ReelService(config)
     attempts = defaultdict(deque)
 
     @asynccontextmanager
@@ -109,8 +113,11 @@ def create_app(settings=None, *, scheduler=True, meta=None):
             db.recover_interrupted()
             task = asyncio.create_task(publisher.run())
         try:
+            if config.password and reels_worker:
+                await reels.start()
             yield
         finally:
+            await reels.close()
             if task:
                 task.cancel()
                 try:
@@ -123,6 +130,13 @@ def create_app(settings=None, *, scheduler=True, meta=None):
     app = FastAPI(title="Auto Posts", version="1.0.0", lifespan=lifespan,
                   docs_url=None, redoc_url=None, openapi_url=None)
     app.state.db, app.state.publisher, app.state.settings = db, publisher, config
+
+    app.state.reels = reels
+    app.include_router(reels_router(reels))
+
+    @app.exception_handler(ReelError)
+    async def reels_error(request, exc):
+        return JSONResponse({"detail": str(exc)}, status_code=422)
 
     def signed_session():
         stamp = str(int(time.time()))
@@ -143,6 +157,8 @@ def create_app(settings=None, *, scheduler=True, meta=None):
     @app.middleware("http")
     async def security(request, call_next):
         path = request.url.path
+        if (path == "/api/reels" or path.startswith("/api/reels/")) and not config.password:
+            return JSONResponse({"detail": "Configure APP_PASSWORD e entre no painel para usar o Estúdio de Reels."}, status_code=503)
         public = path in {"/health", "/login", "/api/login"} or path.startswith(("/media/", "/static/"))
         if not public and not authenticated(request):
             if path.startswith("/api/"):
@@ -159,7 +175,7 @@ def create_app(settings=None, *, scheduler=True, meta=None):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "same-origin"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' blob: data:; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' blob: data:; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         if path.startswith("/api/") or path in {"/", "/login"}:
             response.headers["Cache-Control"] = "no-store"
         return response
