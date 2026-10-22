@@ -8,3 +8,19 @@ __pycache__/
 !.env.example
 test-results/
 .coverage
+
+# Gameplays, trilhas, vozes e modelos locais nunca vão para o Git.
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.webm
+*.WebM
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.flac
+*.aac
+*.onnx
+*.onnx.json

@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 FILES = {'.dockerignore', '.env.example', '.gitignore', 'Dockerfile', 'README.md', 'compose.yaml',
          'requirements.in', 'requirements.txt', 'requirements-dev.txt'}
 DIRECTORIES = {'.github', 'app', 'deploy', 'docs', 'scripts', 'tests'}
+MEDIA_SUFFIXES = {'.mp4', '.mov', '.webm', '.wav', '.mp3', '.m4a', '.ogg', '.flac', '.aac', '.onnx'}
 
 
 def main():
@@ -21,7 +22,7 @@ def main():
             paths.extend(Path(directory) / file for file in files if not file.endswith('.pyc') and not file.startswith('.env'))
     with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(paths):
-            if path.is_file() and not path.is_symlink():
+            if path.is_file() and not path.is_symlink() and path.suffix.lower() not in MEDIA_SUFFIXES:
                 archive.write(path, 'auto-posts/' + path.relative_to(ROOT).as_posix())
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
     target.with_suffix('.zip.sha256').write_text(f'{digest}  {target.name}\n')
