@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import threading
 
 from .tools import ReelError
 
@@ -21,6 +22,7 @@ class Preferences:
 class Secrets:
     """Fernet em repouso; chave local 0600. Nunca retorna tokens nos endpoints GET."""
     def __init__(self, root):
+        self.lock=threading.RLock()
         self.root=root/'secrets';self.root.mkdir(mode=0o700,exist_ok=True)
         self.path=self.root/'credentials.enc';self.key=self.root/'key'
     def cipher(self):
@@ -35,12 +37,14 @@ class Secrets:
         if not self.path.exists():return {}
         try:return json.loads(self.cipher().decrypt(self.path.read_bytes()))
         except Exception:raise ReelError('Não foi possível abrir o cofre local de credenciais.') from None
-    def get(self,key,default=''):return self.read().get(key,default)
+    def get(self,key,default=''):
+        with self.lock:return self.read().get(key,default)
     def set(self,key,value):
-        values=self.read();values[key]=value
-        encoded=self.cipher().encrypt(json.dumps(values).encode())
-        fd,temp=tempfile.mkstemp(dir=self.root)
-        try:
-            with os.fdopen(fd,'wb') as file:file.write(encoded)
-            os.replace(temp,self.path)
-        finally:Path(temp).unlink(missing_ok=True)
+        with self.lock:
+            values=self.read();values[key]=value
+            encoded=self.cipher().encrypt(json.dumps(values).encode())
+            fd,temp=tempfile.mkstemp(dir=self.root)
+            try:
+                with os.fdopen(fd,'wb') as file:file.write(encoded)
+                os.replace(temp,self.path)
+            finally:Path(temp).unlink(missing_ok=True)

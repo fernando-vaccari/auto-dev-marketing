@@ -31,7 +31,7 @@ def analyze(library, identifier):
         bits=''.join('1' if thumb[y*9+x]>thumb[y*9+x+1] else '0' for y in range(8) for x in range(8))
         score=.45*min(1,sharp/45)+.25*min(1,motion/35)+.30*max(0,1-abs(intensity-127)/127)
         windows.append({'time':round(index*interval,3),'score':round(score,4),'sharpness':sharp,'motion':motion,
-                        'exposure':intensity,'change':motion>35,'hash':f'{int(bits,2):016x}'})
+                        'exposure':intensity,'usable':not ((intensity<8 or intensity>248) and ImageStat.Stat(image).stddev[0]<2),'change':motion>35,'hash':f'{int(bits,2):016x}'})
         previous=image
     if not windows:raise ReelError('A análise não encontrou frames decodificáveis.')
     result={'method':'sampled_visual_heuristics','semantic_understanding':False,'samples':windows,'interval':interval,'sampled_until':duration}
@@ -56,9 +56,11 @@ def select(library, assets, frames, cut_frames, *, avoid_reuse=True):
     for asset in assets:
         cap=math.floor(asset['metadata']['duration']*30)
         info=metrics(library,asset['id'])
+        cap=min(cap,round(info['sampled_until']*30)) if info else cap
         for start in range(0,cap,max(1,cut_frames)):
             end=min(cap,start+cut_frames)
             sample=min(info['samples'],key=lambda w:abs(w['time']-start/30)) if info else {'score':.5,'hash':''}
+            if not sample.get('usable',True):continue
             repeated=any(max(start,a)<min(end,b) for a,b in used[asset['id']])
             candidates.append((sample['score']-(.35 if repeated else 0),asset['id'],start,end,sample['hash']))
     candidates.sort(reverse=True);cuts=[];hashes=[];remaining=frames

@@ -82,9 +82,13 @@ function Controller.play(sequence)
             end
         end
     end)
-    camera.CFrame=old.cframe;camera.FieldOfView=old.fov
-    camera.CameraSubject=old.subject;camera.CameraType=old.type
-    for gui,value in pairs(enabled) do if gui.Parent then gui.Enabled=value end end
+    pcall(function()
+        local current=workspace.CurrentCamera or camera
+        current.CFrame=old.cframe;current.FieldOfView=old.fov
+        if old.subject and old.subject.Parent then current.CameraSubject=old.subject end
+        current.CameraType=old.type
+    end)
+    for gui,value in pairs(enabled) do pcall(function() if gui.Parent then gui.Enabled=value end end) end
     for kind,value in pairs(core) do pcall(function() StarterGui:SetCoreGuiEnabled(kind,value) end) end
     running=false
     return success, message

@@ -7,6 +7,7 @@ import shutil
 import signal
 import sys
 import time
+import threading
 
 from .instagram import ReelPublishing
 from .capture import CaptureStudio
@@ -27,6 +28,7 @@ class ReelService:
         self.current = None
         self.closing = False
         self.control = asyncio.Lock()
+        self.media_gate = threading.Lock()
         (self.library.root / 'uploads').mkdir(exist_ok=True)
         (self.library.root / 'worker-logs').mkdir(exist_ok=True)
         self.automation = ReelAutomation(self)
@@ -75,6 +77,8 @@ class ReelService:
             self.lock = None
             raise RuntimeError('Já existe um supervisor web de Reels usando este DATA_DIR.') from None
         self.closing = False
+        self.capture.recover()
+        self.publishing.recover()
         # Nunca utiliza PIDs persistidos para sinalizar processos de outra instância.
         with self.library.db.connect() as db:
             old = [row[0] for row in db.execute("SELECT id FROM reel_jobs WHERE origin='web' AND status='rendering'")]
@@ -189,6 +193,7 @@ class ReelService:
             job_id = row[0]
             try:
                 await self._execute(job_id)
+                await asyncio.sleep(.1)
             except Exception:
                 job = self.library.jobs(job_id)[0]
                 if job['status'] in {'queued', 'rendering'} and not job['cancel_requested']:
@@ -201,16 +206,21 @@ class ReelService:
             job = self.library.jobs(job_id)[0]
             if job['cancel_requested'] or job['status'] != 'queued' or self.closing:
                 return
+            if not self.media_gate.acquire(blocking=False):
+                return
             command = [sys.executable, '-m', 'app.reels.worker', '--data-dir', str(self.settings.data_dir),
                        '--job-id', job_id, '--parent-pid', str(os.getpid()),
                        '--file-limit', str(self.settings.reels_file_limit_mb * MIB)]
-            log = (self.library.root / 'worker-logs' / f'{job_id}.log').open('wb')
+            log = None
             try:
+                log = (self.library.root / 'worker-logs' / f'{job_id}.log').open('wb')
                 process = await asyncio.create_subprocess_exec(*command, cwd=Path(__file__).resolve().parents[2],
                     env=self.child_environment(), start_new_session=True, stdin=asyncio.subprocess.DEVNULL,
                     stdout=log, stderr=log)
             except BaseException:
-                log.close()
+                self.media_gate.release()
+                if log:
+                    log.close()
                 raise
             self.current = (job_id, process)
         waiting = asyncio.create_task(process.wait())
@@ -242,5 +252,6 @@ class ReelService:
                 await self.terminate(process)
             await waiting
             log.close()
+            self.media_gate.release()
             if self.current and self.current[0] == job_id:
                 self.current = None

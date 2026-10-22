@@ -56,6 +56,7 @@ class ReelMetaClient(MetaClient):
 class ReelPublishing:
     def __init__(self,service):
         self.service=service;self.library=service.library;self.client_factory=None
+    def recover(self):
         with self.library.db.connect() as db:
             db.execute("UPDATE reel_deliveries SET status='review_required',error='Servidor reiniciou durante uma operação externa. Confira o Instagram antes de repetir.',updated_at=? WHERE status='processing'",(now_iso(),))
 

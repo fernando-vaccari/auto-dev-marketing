@@ -173,6 +173,13 @@ def build_plan(library, options):
             cuts.append({'asset_id':identifier,'source_start':round(start*fps)/fps,'frames':round(length*fps),'duration':round(length*fps)/fps})
         if sum(c['frames'] for c in cuts)-overlap*(len(cuts)-1)!=required:
             raise ReelError('A soma dos cortes revisados e transições deve corresponder à duração escolhida.')
+        if options.selection=='quality' and options.avoid_reuse:
+            from .analysis import schema
+            schema(library)
+            with library.db.connect() as db:
+                for cut in cuts:
+                    if db.execute('SELECT 1 FROM reel_usage WHERE asset_id=? AND start < ? AND end > ? LIMIT 1',(cut['asset_id'],cut['source_start']+cut['duration'],cut['source_start'])).fetchone():
+                        raise ReelError('Um corte revisado já foi utilizado. Importe outro trecho ou permita reutilização explicitamente.')
         for index,cut in enumerate(cuts):
             for previous in cuts[:index]:
                 if previous['asset_id']==cut['asset_id'] and max(previous['source_start'],cut['source_start'])<min(previous['source_start']+previous['duration'],cut['source_start']+cut['duration']):

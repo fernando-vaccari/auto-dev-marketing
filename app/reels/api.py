@@ -74,6 +74,7 @@ class ScheduleConfig(BaseModel):
     times: list[str] = Field(default=['12:30','19:30'],min_length=1,max_length=4)
     timezone: str = 'America/Sao_Paulo'
     quantity: int = Field(default=1,ge=1,le=3)
+    library_mode: str = Field(default='all',pattern='^(all|selected)$')
     policy: str = Field(default='approval',pattern='^(manual|approval|automatic)$')
     auto_authorized: bool = False
     grace_minutes: int = Field(default=30,ge=1,le=120)
@@ -128,6 +129,10 @@ class DeliveryApproval(BaseModel):
     approved: bool
     authorize_live: bool = False
 
+
+class AssetTags(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    tags: list[str] = Field(min_length=1,max_length=8)
 
 class Limits(BaseModel):
     model_config=ConfigDict(extra='forbid')
@@ -346,6 +351,13 @@ def router(service):
     @api.get('/assets')
     def assets():
         return [asset_view(asset) for asset in library.assets()]
+
+    @api.patch('/assets/{identifier}')
+    def update_tags(identifier: str, body: AssetTags):
+        import json
+        asset=library.asset(identifier,'video');tags=normalize_themes(body.tags)
+        with library.db.connect() as db:db.execute('UPDATE reel_assets SET tags_json=? WHERE id=?',(json.dumps(tags),identifier))
+        return asset_view(library.asset(identifier))
 
     @api.post('/assets', status_code=201)
     async def upload(request: Request, filename: str, kind: str = 'video', tags: str = 'gameplay'):

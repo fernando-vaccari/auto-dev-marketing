@@ -65,9 +65,11 @@ class ReelAutomation:
                 return None
             try:
                 values = dict(config['template'])
-                if not values.get('asset_ids'):
+                values['cuts_override']=None
+                if config.get('library_mode','selected')=='all' or not values.get('asset_ids'):
                     requested = set(values.get('themes', []))
                     values['asset_ids'] = [a['id'] for a in self.library.assets('video') if not requested or requested.intersection(a['tags'])][-30:]
+                values['threads']=self.service.settings.reels_threads
                 options = RenderOptions(**values)
                 build_plan(self.library, options)
                 choose_voice(options.tts, options.kokoro_dir if options.tts == 'kokoro' else options.piper_model)

@@ -101,3 +101,16 @@ class InstagramTests(unittest.IsolatedAsyncioTestCase):
         await self.tick()
         self.assertEqual(self.pub.history()[0]['status'],'review_required')
         self.assertEqual(self.requests,[])
+
+    async def test_paused_automatic_rule_cannot_send_and_restart_marks_ambiguous_operation(self):
+        rule=self.service.automation.save({'enabled':False,'policy':'automatic','auto_authorized':True})
+        with self.service.library.db.connect() as db:
+            db.execute("UPDATE reel_deliveries SET policy='automatic',approved=0,schedule_id=?,revision=1 WHERE job_id=?",(rule,self.job))
+        await self.tick()
+        self.assertEqual(self.pub.history()[0]['status'],'awaiting_approval')
+        self.assertEqual(self.requests,[])
+        with self.service.library.db.connect() as db:db.execute("UPDATE reel_deliveries SET status='processing' WHERE job_id=?",(self.job,))
+        restarted=ReelService(self.service.settings)
+        await restarted.start()
+        try:self.assertEqual(restarted.publishing.history()[0]['status'],'review_required')
+        finally:await restarted.close()

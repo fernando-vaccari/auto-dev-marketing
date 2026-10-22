@@ -66,6 +66,8 @@ class CaptureStudio:
             db.executescript('''CREATE TABLE IF NOT EXISTS reel_captures (
                 id TEXT PRIMARY KEY,status TEXT NOT NULL,config_json TEXT NOT NULL,
                 asset_id TEXT,error TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);''')
+    def recover(self):
+        with self.library.db.connect() as db:
             db.execute("UPDATE reel_captures SET status='review_required',error='Servidor reiniciado. Confira o OBS; nenhuma gravação foi interrompida automaticamente.' WHERE status='recording'")
 
     def obs(self):
@@ -88,32 +90,41 @@ class CaptureStudio:
 
     def start(self, config):
         with self.lock:
-            if self.owned_id or self.service.current:raise ReelError('Aguarde o render ou a captura atual terminar.')
-            if not config['game_confirmed']:raise ReelError('Confirme que o jogo e a sequência estão abertos e visíveis na fonte OBS.')
-            self.service.require_space(256*1024*1024)
-            directory=(self.root/config['directory']).resolve()
-            if not directory.is_relative_to(self.root.resolve()):raise ReelError('Diretório de captura inválido.')
-            directory.mkdir(parents=True,exist_ok=True)
-            with self.obs() as obs:
-                if obs.call('GetRecordStatus').get('outputActive'):raise ReelError('Já existe gravação no OBS. Não iremos interrompê-la.')
-                inputs={i['inputName'] for i in obs.call('GetInputList').get('inputs',[])}
-                if config['input_name'] not in inputs:raise ReelError('A fonte escolhida não existe no OBS.')
-                obs.call('SetCurrentProgramScene',{'sceneName':config['scene_name']})
-                items=obs.call('GetSceneItemList',{'sceneName':config['scene_name']}).get('sceneItems',[])
-                if not any(i.get('sourceName')==config['input_name'] and i.get('sceneItemEnabled') for i in items):
-                    raise ReelError('A fonte deve estar habilitada na cena escolhida.')
-                if not obs.call('GetSourceActive',{'sourceName':config['input_name']}).get('videoActive'):
-                    raise ReelError('A fonte de vídeo não está ativa.')
-                obs.call('SetRecordDirectory',{'recordDirectory':str(directory)})
-                obs.call('StartRecord')
-                identifier=uuid.uuid4().hex
-                try:
-                    with self.library.db.connect() as db:
-                        db.execute("INSERT INTO reel_captures VALUES (?,'recording',?,NULL,NULL,?,?)",(identifier,json.dumps(config),now_iso(),now_iso()))
-                except BaseException:
-                    obs.call('StopRecord');raise
-            self.owned_id=identifier;self.deadline=time.monotonic()+config['duration']+config['lead_seconds']
-            return {'id':identifier,'mode':'assisted','instruction':'Gravação iniciada. Execute agora a sequência no jogo; a parada ocorrerá após a duração e a margem configuradas.'}
+            if not self.service.media_gate.acquire(blocking=False):
+                raise ReelError('Aguarde o processamento local atual terminar.')
+            try:return self._start_owned(config)
+            except BaseException:
+                self.service.media_gate.release()
+                raise
+
+    def _start_owned(self, config):
+        if self.owned_id or self.service.current:raise ReelError('Aguarde o render ou a captura atual terminar.')
+        if not config['game_confirmed']:raise ReelError('Confirme que o jogo e a sequência estão abertos e visíveis na fonte OBS.')
+        self.service.require_space(256*1024*1024)
+        directory=(self.root/config['directory']).resolve()
+        if not directory.is_relative_to(self.root.resolve()):raise ReelError('Diretório de captura inválido.')
+        directory.mkdir(parents=True,exist_ok=True)
+        with self.obs() as obs:
+            if obs.call('GetRecordStatus').get('outputActive'):raise ReelError('Já existe gravação no OBS. Não iremos interrompê-la.')
+            inputs={i['inputName'] for i in obs.call('GetInputList').get('inputs',[])}
+            if config['input_name'] not in inputs:raise ReelError('A fonte escolhida não existe no OBS.')
+            obs.call('SetCurrentProgramScene',{'sceneName':config['scene_name']})
+            items=obs.call('GetSceneItemList',{'sceneName':config['scene_name']}).get('sceneItems',[])
+            if not any(i.get('sourceName')==config['input_name'] and i.get('sceneItemEnabled') for i in items):
+                raise ReelError('A fonte deve estar habilitada na cena escolhida.')
+            if not obs.call('GetSourceActive',{'sourceName':config['input_name']}).get('videoActive'):
+                raise ReelError('A fonte de vídeo não está ativa.')
+            obs.call('SetRecordDirectory',{'recordDirectory':str(directory)})
+            obs.call('StartRecord')
+            identifier=uuid.uuid4().hex
+            try:
+                with self.library.db.connect() as db:
+                    db.execute("INSERT INTO reel_captures VALUES (?,'recording',?,NULL,NULL,?,?)",(identifier,json.dumps(config),now_iso(),now_iso()))
+            except BaseException:
+                obs.call('StopRecord');raise
+        self.owned_id=identifier;self.deadline=time.monotonic()+config['duration']+config['lead_seconds']
+        return {'id':identifier,'mode':'assisted','instruction':'Gravação iniciada. Execute agora a sequência no jogo; a parada ocorrerá após a duração e a margem configuradas.'}
+
 
     def finish(self, identifier):
         with self.lock:
@@ -142,7 +153,9 @@ class CaptureStudio:
                 with self.library.db.connect() as db:
                     db.execute("UPDATE reel_captures SET status='review_required',error=?,updated_at=? WHERE id=?",(message[:500],now_iso(),identifier))
                 raise ReelError(message) from None
-            finally:self.owned_id=None
+            finally:
+                self.owned_id=None
+                self.service.media_gate.release()
 
     def tick(self):
         if self.owned_id and time.monotonic()>=self.deadline:

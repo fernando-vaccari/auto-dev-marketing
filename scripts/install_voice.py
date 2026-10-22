@@ -3,6 +3,7 @@ from pathlib import Path
 import argparse
 import hashlib
 import os
+import tempfile
 import httpx
 
 FILES={
@@ -22,12 +23,14 @@ def install(data_dir):
         if path.exists():
             if digest(path)!=expected:raise RuntimeError(f'{name} difere do release verificado; nenhum arquivo existente foi sobrescrito.')
             print(name+': já verificado');continue
-        temporary=path.with_suffix(path.suffix+'.download')
+        descriptor,name_temp=tempfile.mkstemp(dir=root,suffix='.download')
+        os.close(descriptor)
+        temporary=Path(name_temp)
         try:
             with httpx.stream('GET','https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/'+name,
                               follow_redirects=True,timeout=120) as response:
                 response.raise_for_status()
-                with temporary.open('xb') as destination:
+                with temporary.open('wb') as destination:
                     for chunk in response.iter_bytes(1024*1024):destination.write(chunk)
             if digest(temporary)!=expected:raise RuntimeError('Checksum incorreto; download recusado.')
             temporary.replace(path);print(name+': instalado e verificado')

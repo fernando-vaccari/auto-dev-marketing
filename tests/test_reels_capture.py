@@ -83,3 +83,39 @@ class CaptureTests(unittest.TestCase):
         self.assertNotIn(b'example-test-secret',self.service.secrets.path.read_bytes())
         self.assertEqual(self.service.secrets.path.stat().st_mode&0o777,0o600)
         self.assertEqual(self.service.secrets.key.stat().st_mode&0o777,0o600)
+
+    def test_simulated_obs_over_real_local_websocket_imports_probed_file(self):
+        import base64,hashlib,threading
+        from websockets.sync.server import serve
+        from websockets.exceptions import ConnectionClosed
+        from app.reels.tools import executable,run
+        password='test-obs-only'
+        auth_secret=base64.b64encode(hashlib.sha256((password+'salt').encode()).digest()).decode()
+        expected=base64.b64encode(hashlib.sha256((auth_secret+'challenge').encode()).digest()).decode()
+        def handler(connection):
+            connection.send(json.dumps({'op':0,'d':{'rpcVersion':1,'authentication':{'salt':'salt','challenge':'challenge'}}}))
+            identified=json.loads(connection.recv())
+            if identified['d'].get('authentication')!=expected:return
+            connection.send(json.dumps({'op':2,'d':{'negotiatedRpcVersion':1}}))
+            try:
+                while True:
+                    request=json.loads(connection.recv())['d']
+                    response=self.obs.call(request['requestType'],request.get('requestData',{}))
+                    connection.send(json.dumps({'op':7,'d':{'requestId':request['requestId'],'requestStatus':{'result':True,'code':100},'responseData':response}}))
+            except ConnectionClosed:pass
+        self.service.capture.obs_factory=None
+        with serve(handler,'127.0.0.1',0) as server:
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            self.service.preferences.set('obs',{'port':server.socket.getsockname()[1]})
+            self.service.secrets.set('obs_password',password)
+            identifier=self.service.capture.start(self.config)['id']
+            self.assertTrue(self.service.media_gate.locked())
+            video=Path(self.obs.directory)/'OBS-SIMULADO.mp4'
+            run([executable('ffmpeg'),'-v','error','-f','lavfi','-i','testsrc2=size=160x90:rate=30','-t','16','-c:v','libx264','-threads','1',video])
+            self.obs.path=str(video)
+            result=self.service.capture.finish(identifier)
+            asset=self.service.library.asset(result['asset_id'])
+            self.assertGreaterEqual(asset['metadata']['duration'],16)
+            self.assertEqual(asset['tags'],['cidades'])
+            self.assertFalse(self.service.media_gate.locked())
+            server.shutdown();thread.join(timeout=2)

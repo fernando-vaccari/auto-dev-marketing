@@ -13,7 +13,7 @@ from app.reels.tools import ReelError, executable
 from scripts.install_voice import FILES, digest
 
 ROOT=Path(__file__).resolve().parent.parent
-MODELS=ROOT/'.data/reels/models/kokoro'
+MODELS=Path(os.getenv('REELS_TEST_MODEL_DIR',str(ROOT/'.data/reels/models/kokoro')))
 
 
 class NeuralTests(unittest.TestCase):

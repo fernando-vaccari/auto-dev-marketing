@@ -161,7 +161,7 @@ class ReelStudio:
                 metadata = probe(directory / 'reel.partial.mp4')
                 videos = [stream for stream in metadata['streams'] if stream['codec_type'] == 'video']
                 audios = [stream for stream in metadata['streams'] if stream['codec_type'] == 'audio']
-                if not videos or not audios or (videos[0].get('width'), videos[0].get('height')) != (1080, 1920) or videos[0].get('codec_name') != 'h264' or videos[0].get('pix_fmt') != 'yuv420p' or audios[0].get('codec_name') != 'aac' or abs(metadata['duration'] - options.duration) > .1:
+                if not videos or not audios or (videos[0].get('width'), videos[0].get('height')) != (1080, 1920) or videos[0].get('codec_name') != 'h264' or videos[0].get('pix_fmt') != 'yuv420p' or audios[0].get('codec_name') != 'aac' or videos[0].get('avg_frame_rate') != '30/1' or audios[0].get('sample_rate') != '48000' or audios[0].get('channels') != 2 or abs(metadata['duration'] - options.duration) > .1:
                     raise ReelError('O arquivo renderizado não passou na validação de resolução, duração ou codecs.')
                 # Decodificação completa detecta corrupção além dos metadados.
                 ffmpeg(['-i','reel.partial.mp4','-f','null','-'],timeout=max(120,options.duration*5))
