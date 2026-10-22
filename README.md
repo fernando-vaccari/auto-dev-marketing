@@ -6,6 +6,20 @@ Estúdio de criação e publicação de conteúdo para Instagram, voltado ao pú
 
 [Baixar o projeto em ZIP](auto-posts.zip) · [Guia de implantação gratuita](docs/cloud-free.md)
 
+## Estúdio de Reels para RPG no Roblox — Fase 1
+
+O repositório agora inclui um módulo local de edição para Ubuntu 24.04, mantendo o painel, autenticação, SQLite, agendamentos e integração Meta existentes. Ele importa MP4/MOV/WebM reais, cria roteiros pt-BR baseados nos temas declarados das gravações, narra offline com eSpeak NG ou Piper local e exporta Reels de 15 a 60 segundos em 1080×1920, H.264/AAC, com legendas sincronizadas, cortes, zoom leve e trilha opcional.
+
+```bash
+bash scripts/install-reels.sh
+.venv/bin/python -m app.reels --help
+.venv/bin/python scripts/reels_smoke.py  # teste sintético, não é gameplay do Roblox
+```
+
+[Como gerar seu primeiro Reel com gameplay real](docs/reels.md) · [Arquitetura, limites e próximas fases](docs/reels.md#limites-e-próximas-fases)
+
+A Fase 1 usa CLI; a nova página no painel será feita na Fase 2. **Reels não são publicados ou agendados automaticamente nesta entrega.** Os horários 12h30/19h30, de segunda a sábado em São Paulo, estão documentados como configuração futura desativada. O uso local não exige GPU dedicada ou APIs pagas e não pressupõe Roblox Studio nativo no Ubuntu.
+
 ![Painel Auto Posts](docs/screenshots/desktop.png)
 
 ## O que está implementado
@@ -19,7 +33,7 @@ Estúdio de criação e publicação de conteúdo para Instagram, voltado ao pú
 - Publicação de **imagem única no feed** pela Instagram API com Facebook Login: criação do contêiner, espera do processamento e publicação.
 - Demonstração separada dos envios reais, autenticação e proteção contra reenvios ambíguos.
 
-Esta versão usa um token configurado pelo responsável pela conta. Não inclui OAuth self-service, Reels, Stories, carrosséis, múltiplos clientes ou geração de vídeo. Textos locais são modelos editáveis; revise informações, relevância e direitos de uso antes de aprovar.
+A integração Meta existente usa um token configurado pelo responsável pela conta. Ela não inclui OAuth self-service, publicação de Reels, Stories, carrosséis ou múltiplos clientes. O novo Estúdio edita vídeos fornecidos localmente; não inventa gameplay nem usa geração de vídeo por IA. Textos locais são modelos editáveis; revise informações, relevância e direitos de uso antes de aprovar.
 
 ## Executar localmente
 

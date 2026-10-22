@@ -7,7 +7,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 FILES = {'.dockerignore', '.env.example', '.gitignore', 'Dockerfile', 'README.md', 'compose.yaml',
-         'requirements.in', 'requirements.txt', 'requirements-dev.txt'}
+         'requirements.in', 'requirements.txt', 'requirements-dev.txt', 'requirements-reels-piper.txt'}
 DIRECTORIES = {'.github', 'app', 'deploy', 'docs', 'scripts', 'tests'}
 MEDIA_SUFFIXES = {'.mp4', '.mov', '.webm', '.wav', '.mp3', '.m4a', '.ogg', '.flac', '.aac', '.onnx'}
 
