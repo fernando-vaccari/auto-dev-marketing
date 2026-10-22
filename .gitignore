@@ -34,3 +34,9 @@ session.key
 **/reels/captures/
 **/reels/secrets/
 **/reels/models/
+
+# Ambiente e perfis privados da clonagem opcional.
+.venv-voiceclone/
+**/reels/voice-cloning/
+*.pth
+*.pt

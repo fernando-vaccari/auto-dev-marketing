@@ -37,7 +37,7 @@ def wave_duration(path):
 def choose_voice(engine, model=None):
     if engine == 'auto':
         engine = 'piper' if model else 'espeak'
-    if engine == 'kokoro':
+    if engine in {'kokoro','my_voice'}:
         from .voices import available
         if not available(model):
             raise ReelError('Instale o modelo Kokoro local para utilizar narração neural pt-BR.')
@@ -64,7 +64,7 @@ def choose_voice(engine, model=None):
     return engine, [executable('espeak-ng'), '-v', 'pt-br', '-s', '165']
 
 
-def synthesize(text, directory, *, engine='auto', model=None, duration=30, threads=4, voice_id='pf_dora', speed=1.0, volume=1.0):
+def synthesize(text, directory, *, engine='auto', model=None, duration=30, threads=4, voice_id='pf_dora', speed=1.0, volume=1.0, clone_profile_id=None, clone_root=None):
     directory = Path(directory)
     speech_dir = directory / 'speech'
     speech_dir.mkdir(exist_ok=True)
@@ -76,7 +76,10 @@ def synthesize(text, directory, *, engine='auto', model=None, duration=30, threa
         target = speech_dir / f'phrase-{index:03d}.wav'
         args = command + (['-f', str(raw)] if engine == 'piper' else ['-w', str(raw), '--stdin'])
         # Locale pt-BR é explícito no eSpeak. Para Piper, o idioma vem do modelo local escolhido.
-        if engine == 'kokoro':
+        if engine == 'my_voice':
+            from .voice_cloning import generate
+            generate(phrase,raw,root=clone_root,profile_id=clone_profile_id,kokoro_dir=model,threads=threads)
+        elif engine == 'kokoro':
             from .voices import generate
             generate(phrase, raw, directory=model, voice=voice_id, threads=threads)
         else:

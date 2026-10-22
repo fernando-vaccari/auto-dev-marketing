@@ -65,9 +65,10 @@ def main():
             directory=library.root/'jobs'/args.job_id;directory.mkdir()
             library.update_job(args.job_id,'rendering','narration',10,'Gerando prévia local')
             result=synthesize_fitting(options.script,directory,engine=options.tts,
-                model=options.kokoro_dir if options.tts=='kokoro' else options.piper_model,
+                model=options.kokoro_dir if options.tts in {'kokoro','my_voice'} else options.piper_model,
                 duration=options.duration,threads=options.threads,voice_id=options.voice_id,
-                speed=options.voice_speed,volume=options.voice_volume,auto_shorten=options.auto_shorten)
+                speed=options.voice_speed,volume=options.voice_volume,auto_shorten=options.auto_shorten,
+                clone_profile_id=options.clone_profile_id,clone_root=options.clone_root)
             (directory/'script.txt').write_text(result['text'],encoding='utf-8')
             (directory/'narration.json').write_text(json.dumps(result,ensure_ascii=False))
             write_captions(directory,result,title=options.title,duration=options.duration)

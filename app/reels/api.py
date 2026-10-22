@@ -35,11 +35,12 @@ class Creation(BaseModel):
     duration: int = Field(ge=15, le=60, strict=True)
     themes: list[str] = Field(default_factory=list, max_length=8)
     script: str | None = Field(default=None, max_length=3000)
-    tts: str = Field(default='espeak', pattern='^(espeak|piper|kokoro)$')
+    tts: str = Field(default='espeak', pattern='^(espeak|piper|kokoro|my_voice)$')
     music_id: str | None = None
     fit: str = Field(default='contain', pattern='^(contain|crop|blur)$')
     zoom: float = Field(default=.02, ge=0, le=.06, allow_inf_nan=False)
     voice_id: str = Field(default='pf_dora',pattern='^(pf_dora|pm_alex|pm_santa)$')
+    clone_profile_id: str | None = Field(default=None,pattern=r'^[a-f0-9]{32}$')
     voice_speed: float = Field(default=1,ge=.85,le=1.15,allow_inf_nan=False)
     voice_volume: float = Field(default=1,ge=.5,le=1.5,allow_inf_nan=False)
     auto_shorten: bool = True
@@ -171,7 +172,7 @@ def router(service):
 
     def job_view(job):
         value = {key: job[key] for key in ('id', 'status', 'stage', 'progress', 'error', 'events', 'created_at', 'updated_at', 'origin')}
-        value['config'] = {key: val for key, val in job['config'].items() if key not in {'piper_model','kokoro_dir','_task'}}
+        value['config'] = {key: val for key, val in job['config'].items() if key not in {'piper_model','kokoro_dir','clone_root','_task'}}
         value['kind'] = job['config'].get('_task','reel')
         value['audio_url'] = f"/api/reels/jobs/{job['id']}/audio" if job['status'] == 'ready' and value['kind'] == 'voice_preview' else None
         value['video_url'] = f"/api/reels/jobs/{job['id']}/video" if job['status'] == 'ready' and value['kind'] == 'reel' else None
@@ -181,7 +182,12 @@ def router(service):
         values = body.model_dump()
         values.update(asset_ids=tuple(body.asset_ids), themes=tuple(body.themes),
                       threads=service.settings.reels_threads, piper_model=os.getenv('REELS_PIPER_MODEL') if body.tts == 'piper' else None)
-        values['kokoro_dir'] = str(library.root/'models'/'kokoro') if body.tts == 'kokoro' else None
+        values['kokoro_dir'] = str(library.root/'models'/'kokoro') if body.tts in {'kokoro','my_voice'} else None
+        values['clone_root']=str(library.root/'voice-cloning') if body.tts=='my_voice' else None
+        if body.tts=='my_voice':
+            from .voice_cloning import read_profile, runtime_status
+            read_profile(values['clone_root'], body.clone_profile_id)
+            if not runtime_status()['installed']:raise ReelError(runtime_status()['reason'])
         result=RenderOptions(**values)
         # A prévia não exige vídeos; as demais opções precisam ser validadas também.
         if not result.asset_ids:
@@ -352,6 +358,8 @@ def router(service):
                 voices.append(name)
             except ReelError:
                 pass
+        from .voice_cloning import runtime_status, profiles
+        if runtime_status()['installed'] and profiles(library.root/'voice-cloning') and 'kokoro' in voices:voices.append('my_voice')
         from .cinema import PRESETS,CAPTIONS,SCRIPT_STYLES
         return {'presets': PRESETS,'caption_styles':list(CAPTIONS),'script_styles':sorted(SCRIPT_STYLES),
                 'voice_catalog':VOICES,
@@ -438,13 +446,17 @@ def router(service):
     def create(body: Creation):
         opts = options(body)
         build_plan(library, opts)
-        choose_voice(opts.tts, opts.kokoro_dir if opts.tts == 'kokoro' else opts.piper_model)
+        choose_voice(opts.tts, opts.kokoro_dir if opts.tts in {'kokoro','my_voice'} else opts.piper_model)
         if opts.music_id:
             library.asset(opts.music_id, 'music')
         if opts.effect_id:
             library.asset(opts.effect_id, 'effect')
         service.require_space(128 * MIB)
-        job_id = library.create_job(opts.to_dict(), origin='web', queue_limit=service.settings.reels_queue_limit)
+        from contextlib import nullcontext
+        from .voice_cloning import profile_lock, read_profile
+        with profile_lock(opts.clone_root) if opts.tts=='my_voice' else nullcontext():
+            if opts.tts=='my_voice':read_profile(opts.clone_root,opts.clone_profile_id)
+            job_id = library.create_job(opts.to_dict(), origin='web', queue_limit=service.settings.reels_queue_limit)
         return job_view(get_job(job_id))
 
     @api.get('/jobs')
@@ -498,9 +510,13 @@ def router(service):
         if not body.script or len(body.script)>600:
             raise HTTPException(422,'A prévia exige um texto de até 600 caracteres.')
         opts=options(body)
-        choose_voice(opts.tts,opts.kokoro_dir if opts.tts=='kokoro' else opts.piper_model)
+        choose_voice(opts.tts,opts.kokoro_dir if opts.tts in {'kokoro','my_voice'} else opts.piper_model)
         service.require_space(32*MIB)
-        identifier=library.create_job(opts.to_dict()|{'_task':'voice_preview'},origin='web',queue_limit=service.settings.reels_queue_limit)
+        from contextlib import nullcontext
+        from .voice_cloning import profile_lock, read_profile
+        with profile_lock(opts.clone_root) if opts.tts=='my_voice' else nullcontext():
+            if opts.tts=='my_voice':read_profile(opts.clone_root,opts.clone_profile_id)
+            identifier=library.create_job(opts.to_dict()|{'_task':'voice_preview'},origin='web',queue_limit=service.settings.reels_queue_limit)
         return job_view(get_job(identifier))
 
     @api.get('/jobs/{job_id}/video')
@@ -528,4 +544,6 @@ def router(service):
             result[key] = path.read_text(encoding='utf-8')
         return result
 
+    from .voice_cloning_api import router as cloning_router
+    api.include_router(cloning_router(service))
     return api

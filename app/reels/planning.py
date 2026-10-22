@@ -36,6 +36,8 @@ class RenderOptions:
     music_volume: float = 0.12
     voice_id: str = 'pf_dora'
     kokoro_dir: str | None = None
+    clone_profile_id: str | None = None
+    clone_root: str | None = None
     voice_speed: float = 1.0
     voice_volume: float = 1.0
     auto_shorten: bool = True
@@ -83,8 +85,10 @@ class RenderOptions:
             raise ReelError('O volume da trilha deve ficar entre 0 e 0.3.')
         if not math.isfinite(self.effect_volume) or not 0 <= self.effect_volume <= .3:
             raise ReelError('Volume de efeito inválido.')
-        if self.tts not in {'auto', 'espeak', 'piper', 'kokoro'}:
+        if self.tts not in {'auto', 'espeak', 'piper', 'kokoro', 'my_voice'}:
             raise ReelError('Narração inválida: escolha auto, espeak ou piper.')
+        if self.tts=='my_voice' and (not re.fullmatch(r'[a-f0-9]{32}',self.clone_profile_id or '') or not self.clone_root):
+            raise ReelError('Selecione um perfil local de Minha Voz.')
         if self.voice_id not in {'pf_dora','pm_alex','pm_santa'} or not .85 <= self.voice_speed <= 1.15 or not .5 <= self.voice_volume <= 1.5:
             raise ReelError('Voz, velocidade ou volume inválidos.')
         if self.script is not None and (not self.script.strip() or len(self.script) > 3000):
