@@ -1,5 +1,7 @@
 # Estúdio de Reels — pipeline e CLI
 
+> Documentação histórica das Fases 1/2. Para o estado atual, veja [Auto Posts completo](auto-posts-completo.md).
+
 Módulo **local e offline** para transformar gravações existentes de gameplay em MP4 vertical, sem reescrever o Auto Posts. A CLI `python -m app.reels` da Fase 1 permanece disponível. A Fase 2 já oferece [geração pelo painel web](reels-web.md); geração/publicação agendada e Meta Reels pertencem à Fase 3.
 
 ## Arquitetura existente e extensão escolhida

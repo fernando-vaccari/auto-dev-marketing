@@ -1,5 +1,7 @@
 # Estúdio de Reels pelo navegador — Fase 2
 
+> Documentação histórica das Fases 1/2. Para o estado atual, veja [Auto Posts completo](auto-posts-completo.md).
+
 A Fase 2 acrescenta uma página ao painel existente. Reutiliza biblioteca, planejamento, voz, legendas e renderizador da Fase 1. FastAPI, autenticação, SQLite, automação e publicação de imagens continuam existentes. Não há agendamento ou envio de Reels à Meta nesta fase.
 
 ![Estúdio com um vídeo de teste sintético, não gameplay do Roblox](screenshots/reels.png)

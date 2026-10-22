@@ -1,24 +1,28 @@
 # Auto Posts
 
-Estúdio de criação e publicação de conteúdo para Instagram, voltado ao público de **marketing digital**.
+Produção local de conteúdo para Instagram, com trailers para RPGs no Roblox e os recursos de marketing digital já existentes.
 
 **Fernando Vaccari Pickhardt--Dev--Web** aparece na capa do painel e nas artes. Nome, assinatura, público, tom, cor e chamada para ação são editáveis em **Minha marca**.
 
 [Baixar o projeto em ZIP](auto-posts.zip) · [Guia de implantação gratuita](docs/cloud-free.md)
 
-## Estúdio de Reels para RPG no Roblox — Fases 1 e 2
+## Produção local de trailers para seu RPG Roblox
 
-O repositório agora inclui um módulo local de edição para Ubuntu 24.04, mantendo o painel, autenticação, SQLite, agendamentos e integração Meta existentes. Ele importa MP4/MOV/WebM reais, cria roteiros pt-BR baseados nos temas declarados das gravações, narra offline com eSpeak NG ou Piper local e exporta Reels de 15 a 60 segundos em 1080×1920, H.264/AAC, com legendas sincronizadas, cortes, zoom leve e trilha opcional.
+O Estúdio agora inclui **voz neural Kokoro em português brasileiro**, prévia de voz, oito presets cinematográficos, legendas animadas por frase, ducking, música/SFX próprios, análise técnica e revisão de cortes, captura OBS assistida com pacote de câmeras Luau, agendamentos persistentes e fluxo oficial de publicação de Reels. Tudo continua integrado ao painel existente, sem APIs de IA pagas ou GPU dedicada.
 
 ```bash
-bash scripts/install-reels.sh
-.venv/bin/python -m app.reels --help
-.venv/bin/python scripts/reels_smoke.py  # teste sintético, não é gameplay do Roblox
+bash scripts/auto-posts instalar --com-obs
+# Com APP_PASSWORD e suas variáveis existentes configuradas:
+bash scripts/auto-posts iniciar
 ```
 
-[Como gerar seu primeiro Reel com gameplay real](docs/reels.md) · [Arquitetura, limites e próximas fases](docs/reels.md#limites-e-próximas-fases)
+**[Guia completo: instalação e uso pelo navegador](docs/auto-posts-completo.md)** · [Validação e pendências reais](docs/validacao-sistema-completo.md) · [Fontes oficiais e licenças](docs/referencias-tecnicas.md)
 
-A página **Estúdio de Reels** já permite importar, configurar, gerar, acompanhar, cancelar, reproduzir e baixar pelo navegador, com login obrigatório. [Instalação e uso da Fase 2](docs/reels-web.md). A CLI da Fase 1 permanece disponível. **Reels não são publicados ou agendados automaticamente nesta entrega.** Os horários 12h30/19h30, de segunda a sábado em São Paulo, estão documentados como configuração futura desativada. O uso local não exige GPU dedicada ou APIs pagas e não pressupõe Roblox Studio nativo no Ubuntu.
+A captura usa modo assistido: o OBS grava e importa, e você inicia a sequência dentro do jogo. Não há Roblox Studio nativo no Ubuntu nem disparo remoto de câmera comprovado. O pacote Luau e as integrações foram preparados; captura de gameplay real e publicação real na Meta estão **PENDENTES DE VALIDAÇÃO REAL**. A edição foi testada com fixtures sintéticas, que não representam seu jogo.
+
+Reels começam em demonstração. Regras de exemplo 12h30/19h30, segunda a sábado em São Paulo, permanecem desativadas até configuração e autorização. A integração de imagens continua preservada e tem sua própria configuração. O computador precisa permanecer ligado nos horários.
+
+A [CLI e o pipeline originais](docs/reels.md) e o [guia histórico da página da Fase 2](docs/reels-web.md) permanecem disponíveis. O ZIP contém código/documentação; modelos, vídeos e credenciais não entram no Git.
 
 ![Painel Auto Posts](docs/screenshots/desktop.png)
 
@@ -33,7 +37,7 @@ A página **Estúdio de Reels** já permite importar, configurar, gerar, acompan
 - Publicação de **imagem única no feed** pela Instagram API com Facebook Login: criação do contêiner, espera do processamento e publicação.
 - Demonstração separada dos envios reais, autenticação e proteção contra reenvios ambíguos.
 
-A integração Meta existente usa um token configurado pelo responsável pela conta. Ela não inclui OAuth self-service, publicação de Reels, Stories, carrosséis ou múltiplos clientes. O novo Estúdio edita vídeos fornecidos localmente; não inventa gameplay nem usa geração de vídeo por IA. Textos locais são modelos editáveis; revise informações, relevância e direitos de uso antes de aprovar.
+A integração Meta existente usa um token configurado pelo responsável pela conta. Ela não inclui OAuth self-service, Stories, carrosséis ou múltiplos clientes. Reels agora possuem um fluxo próprio de publicação oficial, separado da integração de imagens. O novo Estúdio edita vídeos fornecidos localmente; não inventa gameplay nem usa geração de vídeo por IA. Textos locais são modelos editáveis; revise informações, relevância e direitos de uso antes de aprovar.
 
 ## Executar localmente
 
