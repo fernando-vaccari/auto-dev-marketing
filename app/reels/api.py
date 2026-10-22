@@ -20,6 +20,13 @@ from .tools import ReelError
 from .service import MIB
 
 
+class Cut(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    asset_id: str = Field(min_length=1,max_length=64)
+    source_start: float = Field(ge=0,allow_inf_nan=False)
+    duration: float = Field(gt=0,le=10,allow_inf_nan=False)
+
+
 class Creation(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     asset_ids: list[str] = Field(default_factory=list, max_length=30)
@@ -27,10 +34,36 @@ class Creation(BaseModel):
     duration: int = Field(ge=15, le=60, strict=True)
     themes: list[str] = Field(default_factory=list, max_length=8)
     script: str | None = Field(default=None, max_length=3000)
-    tts: str = Field(default='espeak', pattern='^(espeak|piper)$')
+    tts: str = Field(default='espeak', pattern='^(espeak|piper|kokoro)$')
     music_id: str | None = None
-    fit: str = Field(default='contain', pattern='^(contain|crop)$')
+    fit: str = Field(default='contain', pattern='^(contain|crop|blur)$')
     zoom: float = Field(default=.02, ge=0, le=.06, allow_inf_nan=False)
+    voice_id: str = Field(default='pf_dora',pattern='^(pf_dora|pm_alex|pm_santa)$')
+    voice_speed: float = Field(default=1,ge=.85,le=1.15,allow_inf_nan=False)
+    voice_volume: float = Field(default=1,ge=.5,le=1.5,allow_inf_nan=False)
+    auto_shorten: bool = True
+
+    preset: str = Field(default='legacy',max_length=40)
+    caption_style: str = Field(default='preset',max_length=30)
+    caption_font: str = Field(default='DejaVu Sans',max_length=30)
+    caption_size: int = Field(default=42,ge=28,le=64)
+    caption_color: str = Field(default='#FFFFFF',pattern=r'^#[a-fA-F0-9]{6}$')
+    caption_outline: int = Field(default=2,ge=0,le=5)
+    caption_shadow: int = Field(default=1,ge=0,le=4)
+    caption_position: str = Field(default='bottom',pattern='^(bottom|center|top)$')
+    caption_animation: bool = True
+    highlight_words: list[str] = Field(default_factory=list,max_length=5)
+    selection: str = Field(default='sequential',pattern='^(sequential|quality)$')
+    avoid_reuse: bool = True
+    cuts_override: list[Cut] | None = Field(default=None,max_length=60)
+    script_style: str = Field(default='informativo',max_length=30)
+    game_name: str = Field(default='',max_length=80)
+    confirmed_facts: list[str] = Field(default_factory=list,max_length=5)
+    cta: str = Field(default='Acompanhe o desenvolvimento.',max_length=100)
+    variation: int = Field(default=0,ge=0,le=100000)
+    music_volume: float = Field(default=.12,ge=0,le=.3,allow_inf_nan=False)
+    effect_id: str | None = None
+    effect_volume: float = Field(default=.1,ge=0,le=.3,allow_inf_nan=False)
 
 
 class ScheduleConfig(BaseModel):
@@ -78,9 +111,44 @@ class CaptureConfig(BaseModel):
     game_confirmed: bool = False
 
 
+class InstagramConfig(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    mode: str = Field(default='demo',pattern='^(demo|live)$')
+    account_id: str = Field(default='',pattern=r'^\d{0,40}$')
+    app_id: str = Field(default='',pattern=r'^\d{0,40}$')
+    api_version: str = Field(default='v26.0',pattern=r'^v\d{1,3}\.0$')
+    token: str | None = Field(default=None,max_length=4096)
+    enabled: bool = False
+    business_login_confirmed: bool = False
+    permissions_confirmed: bool = False
+    authorize_live: bool = False
+
+class DeliveryApproval(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    approved: bool
+    authorize_live: bool = False
+
+
+class Limits(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    reels_upload_mb: int = Field(default=512,ge=1,le=2048)
+    reels_music_mb: int = Field(default=64,ge=1,le=256)
+    reels_storage_mb: int = Field(default=8192,ge=256,le=65536)
+    reels_min_free_mb: int = Field(default=1024,ge=0,le=16384)
+    reels_threads: int = Field(default=4,ge=1,le=8)
+    reels_queue_limit: int = Field(default=3,ge=1,le=10)
+    reels_timeout_seconds: int = Field(default=900,ge=30,le=3600)
+    reels_file_limit_mb: int = Field(default=512,ge=32,le=2048)
+
+class WorkspacePreferences(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    studio: Creation | None = None
+    limits: Limits | None = None
+
+
 def router(service):
     api = APIRouter(prefix='/api/reels')
-    library, settings = service.library, service.settings
+    library = service.library
 
     def asset_view(asset):
         return {key: asset[key] for key in ('id', 'kind', 'original_name', 'tags', 'metadata', 'created_at')} | {
@@ -96,15 +164,97 @@ def router(service):
 
     def job_view(job):
         value = {key: job[key] for key in ('id', 'status', 'stage', 'progress', 'error', 'events', 'created_at', 'updated_at', 'origin')}
-        value['config'] = {key: val for key, val in job['config'].items() if key != 'piper_model'}
-        value['video_url'] = f"/api/reels/jobs/{job['id']}/video" if job['status'] == 'ready' else None
+        value['config'] = {key: val for key, val in job['config'].items() if key not in {'piper_model','kokoro_dir','_task'}}
+        value['kind'] = job['config'].get('_task','reel')
+        value['audio_url'] = f"/api/reels/jobs/{job['id']}/audio" if job['status'] == 'ready' and value['kind'] == 'voice_preview' else None
+        value['video_url'] = f"/api/reels/jobs/{job['id']}/video" if job['status'] == 'ready' and value['kind'] == 'reel' else None
         return value
 
     def options(body):
         values = body.model_dump()
         values.update(asset_ids=tuple(body.asset_ids), themes=tuple(body.themes),
-                      threads=settings.reels_threads, piper_model=os.getenv('REELS_PIPER_MODEL') if body.tts == 'piper' else None)
-        return RenderOptions(**values)
+                      threads=service.settings.reels_threads, piper_model=os.getenv('REELS_PIPER_MODEL') if body.tts == 'piper' else None)
+        values['kokoro_dir'] = str(library.root/'models'/'kokoro') if body.tts == 'kokoro' else None
+        result=RenderOptions(**values)
+        # A prévia não exige vídeos; as demais opções precisam ser validadas também.
+        if not result.asset_ids:
+            from dataclasses import replace
+            replace(result,asset_ids=('preview',)).validate()
+        else:result.validate()
+        return result
+
+    @api.get('/preferences')
+    def preferences():
+        fields=Limits.model_fields
+        return {'studio':service.preferences.get('studio',None),
+                'limits':{key:getattr(service.settings,key) for key in fields}}
+
+    @api.put('/preferences')
+    def preferences_save(body: WorkspacePreferences):
+        from dataclasses import replace
+        if body.studio:
+            options(body.studio)
+            service.preferences.set('studio',body.studio.model_dump())
+        if body.limits:
+            value=replace(service.settings,**body.limits.model_dump());value.validate()
+            service.preferences.set('limits',body.limits.model_dump());service.settings=value
+        return {'saved':True}
+
+    @api.post('/jobs/{job_id}/cleanup')
+    def cleanup(job_id: str):
+        import shutil
+        from .render import render_lock
+        job=get_job(job_id)
+        if job['status'] in {'queued','rendering'} or (service.current and service.current[0]==job_id):
+            raise HTTPException(409,'Aguarde o job terminar antes de limpar intermediários.')
+        directory=library.root/'jobs'/job_id
+        if directory.resolve()!=library.root.resolve()/'jobs'/job_id:raise HTTPException(404,'Diretório inválido.')
+        removed=0
+        with render_lock(library.root):
+            if directory.exists():
+                for path in directory.iterdir():
+                    if path.name in {'speech','fonts'} or re.fullmatch(r'cut-\d{3}\.mp4',path.name) or path.name in {'reel.partial.mp4','cuts.ffconcat'}:
+                        if path.is_symlink():raise HTTPException(409,'Intermediário com symlink recusado.')
+                        if path.is_dir():shutil.rmtree(path)
+                        else:path.unlink()
+                        removed+=1
+        return {'removed_entries':removed,'deliverables_preserved':True}
+
+    @api.get('/instagram/config')
+    def instagram_config():
+        return service.publishing.configuration()|{'token_configured':bool(service.publishing.token()),'image_mode':service.settings.mode,
+            'required_permissions':['instagram_basic','instagram_content_publish','pages_read_engagement'],
+            'upload_strategy':'official_resumable_local_file'}
+
+    @api.put('/instagram/config')
+    def instagram_save(body: InstagramConfig):
+        if body.enabled and not body.authorize_live:raise HTTPException(422,'Confirme a autorização de publicação real.')
+        values=body.model_dump(exclude={'token','authorize_live'})
+        values['revision']=service.publishing.configuration()['revision']+1
+        if body.token is not None:service.secrets.set('meta_token',body.token)
+        service.preferences.set('instagram',values)
+        return {'saved':True,'mode':body.mode}
+
+    @api.post('/instagram/check')
+    async def instagram_check():
+        from ..meta import MetaError
+        try:
+            account=await service.publishing.client().account()
+            return {'id':account.get('id'),'username':account.get('username'),'checked':True,'publishing_tested':False}
+        except MetaError as error:raise HTTPException(422,str(error)) from None
+
+    @api.get('/deliveries')
+    def deliveries():return service.publishing.history()
+
+    @api.post('/jobs/{job_id}/delivery',status_code=201)
+    def delivery_register(job_id: str):
+        get_job(job_id);service.publishing.register(job_id)
+        return {'registered':True}
+
+    @api.post('/jobs/{job_id}/approval')
+    def delivery_approve(job_id: str, body: DeliveryApproval):
+        get_job(job_id);service.publishing.approve(job_id,body.approved,body.authorize_live)
+        return {'approved':body.approved,'mode':service.publishing.configuration()['mode']}
 
     @api.get('/capture/config')
     def obs_config():
@@ -144,7 +294,7 @@ def router(service):
         result = service.automation.schedules()
         for item in result:
             item.pop('config_json', None)
-            item['config']['template'].pop('piper_model',None)
+            item['config']['template']={key:value for key,value in item['config']['template'].items() if key in Creation.model_fields}
         return result
 
     @api.post('/schedules', status_code=201)
@@ -180,15 +330,18 @@ def router(service):
     @api.get('/config')
     def config():
         voices = []
-        for name in ('espeak', 'piper'):
+        for name in ('kokoro', 'espeak', 'piper'):
             try:
-                choose_voice(name, os.getenv('REELS_PIPER_MODEL'))
+                choose_voice(name, str(library.root/'models'/'kokoro') if name == 'kokoro' else os.getenv('REELS_PIPER_MODEL'))
                 voices.append(name)
             except ReelError:
                 pass
-        return {'video_limit_bytes': settings.reels_upload_mb * MIB,
-                'music_limit_bytes': settings.reels_music_mb * MIB, 'storage': service.storage(),
-                'voices': voices, 'publishing_enabled': False}
+        from .cinema import PRESETS,CAPTIONS,SCRIPT_STYLES
+        return {'presets': PRESETS,'caption_styles':list(CAPTIONS),'script_styles':sorted(SCRIPT_STYLES),
+                'voice_catalog':__import__('app.reels.voices',fromlist=['VOICES']).VOICES,
+                'video_limit_bytes': service.settings.reels_upload_mb * MIB,
+                'music_limit_bytes': service.settings.reels_music_mb * MIB, 'storage': service.storage(),
+                'voices': voices, 'publishing_enabled': service.publishing.configuration()['enabled'] and service.publishing.configuration()['mode']=='live'}
 
     @api.get('/assets')
     def assets():
@@ -200,7 +353,7 @@ def router(service):
         if not filename or len(filename) > 180 or any(c in filename for c in '/\\:') or any(unicodedata.category(c) in {'Cc', 'Cf'} for c in filename):
             raise HTTPException(422, 'Nome de arquivo inválido.')
         suffix = Path(filename).suffix.lower()
-        if kind not in {'video', 'music'} or suffix not in (VIDEO_EXTENSIONS if kind == 'video' else MUSIC_EXTENSIONS):
+        if kind not in {'video', 'music', 'effect'} or suffix not in (VIDEO_EXTENSIONS if kind == 'video' else MUSIC_EXTENSIONS):
             raise HTTPException(422, 'Formato não permitido.')
         normalized = normalize_themes([tags]) if kind == 'video' else []
         try:
@@ -209,7 +362,7 @@ def router(service):
             size = 0
         if size <= 0:
             raise HTTPException(411, 'Informe Content-Length positivo.')
-        limit = (settings.reels_upload_mb if kind == 'video' else settings.reels_music_mb) * MIB
+        limit = (service.settings.reels_upload_mb if kind == 'video' else service.settings.reels_music_mb) * MIB
         if size > limit:
             raise HTTPException(413, 'Arquivo excede o limite configurado.')
         lock = (library.root / 'upload.lock').open('a')
@@ -254,11 +407,13 @@ def router(service):
     def create(body: Creation):
         opts = options(body)
         build_plan(library, opts)
-        choose_voice(opts.tts, opts.piper_model)
+        choose_voice(opts.tts, opts.kokoro_dir if opts.tts == 'kokoro' else opts.piper_model)
         if opts.music_id:
             library.asset(opts.music_id, 'music')
+        if opts.effect_id:
+            library.asset(opts.effect_id, 'effect')
         service.require_space(128 * MIB)
-        job_id = library.create_job(opts.to_dict(), origin='web', queue_limit=settings.reels_queue_limit)
+        job_id = library.create_job(opts.to_dict(), origin='web', queue_limit=service.settings.reels_queue_limit)
         return job_view(get_job(job_id))
 
     @api.get('/jobs')
@@ -286,6 +441,36 @@ def router(service):
         if directory.resolve() != expected or not path.is_relative_to(expected) or not path.is_file():
             raise HTTPException(404, 'Arquivo indisponível.')
         return path
+
+    @api.get('/jobs/{job_id}/audio')
+    def preview_audio(job_id: str):
+        if get_job(job_id)['config'].get('_task') != 'voice_preview':
+            raise HTTPException(404,'Prévia não encontrada.')
+        return FileResponse(private_file(job_id,'narration.wav',True),media_type='audio/wav')
+
+    @api.post('/analyze',status_code=202)
+    def analysis_create(body: Creation):
+        opts=options(body)
+        if not opts.asset_ids:raise HTTPException(422,'Selecione vídeos para analisar.')
+        for identifier in opts.asset_ids:library.asset(identifier,'video')
+        identifier=library.create_job(opts.to_dict()|{'_task':'analysis'},origin='web',queue_limit=service.settings.reels_queue_limit)
+        return job_view(get_job(identifier))
+
+    @api.get('/jobs/{job_id}/analysis')
+    def analysis_result(job_id: str):
+        if get_job(job_id)['config'].get('_task')!='analysis':raise HTTPException(404,'Análise não encontrada.')
+        import json
+        return json.loads(private_file(job_id,'analysis.json',True).read_text())
+
+    @api.post('/voice-preview',status_code=202)
+    def voice_preview(body: Creation):
+        if not body.script or len(body.script)>600:
+            raise HTTPException(422,'A prévia exige um texto de até 600 caracteres.')
+        opts=options(body)
+        choose_voice(opts.tts,opts.kokoro_dir if opts.tts=='kokoro' else opts.piper_model)
+        service.require_space(32*MIB)
+        identifier=library.create_job(opts.to_dict()|{'_task':'voice_preview'},origin='web',queue_limit=service.settings.reels_queue_limit)
+        return job_view(get_job(identifier))
 
     @api.get('/jobs/{job_id}/video')
     def video(job_id: str):

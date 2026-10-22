@@ -8,6 +8,7 @@ import signal
 import sys
 import time
 
+from .instagram import ReelPublishing
 from .capture import CaptureStudio
 from .preferences import Preferences, Secrets
 from .automation import ReelAutomation
@@ -31,9 +32,16 @@ class ReelService:
         self.automation = ReelAutomation(self)
         self.last_tick = 0
         self.preferences = Preferences(self.library)
+        saved_limits=self.preferences.get('limits',{})
+        if saved_limits:
+            from dataclasses import replace
+            self.settings=replace(settings,**saved_limits)
+            self.settings.validate()
         self.secrets = Secrets(self.library.root)
         self.capture = CaptureStudio(self)
         self.support_task = None
+        self.publishing = ReelPublishing(self)
+        self.delivery_task = None
 
     def storage(self):
         used = 0
@@ -75,6 +83,7 @@ class ReelService:
                                     error='O servidor reiniciou durante o render. Crie um novo job.')
         self.task = asyncio.create_task(self._run())
         self.support_task = asyncio.create_task(self._support())
+        self.delivery_task = asyncio.create_task(self._delivery())
 
     @staticmethod
     async def terminate(process):
@@ -107,6 +116,13 @@ class ReelService:
                 await asyncio.to_thread(self.capture.finish, self.capture.owned_id)
             except ReelError:
                 pass
+        if self.delivery_task:
+            self.delivery_task.cancel()
+            try:
+                await self.delivery_task
+            except asyncio.CancelledError:
+                pass
+            self.delivery_task = None
         if self.support_task:
             await self.support_task
             self.support_task = None
@@ -141,9 +157,20 @@ class ReelService:
                       OPENBLAS_NUM_THREADS=str(self.settings.reels_threads))
         return result
 
+    async def _delivery(self):
+        while not self.closing:
+            try:
+                await self.publishing.tick()
+            except Exception:
+                self.integration_error = 'Falha na rotina Instagram; confira a configuração e o histórico.'
+            await asyncio.sleep(10)
+
     async def _support(self):
         while not self.closing:
-            await asyncio.to_thread(self.capture.tick)
+            try:
+                await asyncio.to_thread(self.capture.tick)
+            except Exception:
+                self.integration_error = 'Falha na rotina de captura; confira o OBS e o histórico.'
             await asyncio.sleep(1)
 
     async def _run(self):

@@ -70,7 +70,7 @@ class ReelAutomation:
                     values['asset_ids'] = [a['id'] for a in self.library.assets('video') if not requested or requested.intersection(a['tags'])][-30:]
                 options = RenderOptions(**values)
                 build_plan(self.library, options)
-                choose_voice(options.tts, options.piper_model)
+                choose_voice(options.tts, options.kokoro_dir if options.tts == 'kokoro' else options.piper_model)
                 self.service.require_space(128*1024*1024)
                 count = db.execute("SELECT COUNT(*) FROM reel_jobs WHERE origin='web' AND status IN ('queued','rendering')").fetchone()[0]
                 if count >= self.service.settings.reels_queue_limit:
@@ -81,7 +81,7 @@ class ReelAutomation:
                            (identifier,json.dumps(options.to_dict(),ensure_ascii=False),stamp,stamp))
                 db.execute("UPDATE reel_slots SET status='queued',job_id=?,updated_at=? WHERE slot=?", (identifier,stamp,slot))
                 db.execute("INSERT INTO reel_deliveries(job_id,policy,approved,status,schedule_id,revision,mode,created_at,updated_at) VALUES (?,?,0,'awaiting_render',?,?,?,?,?)",
-                           (identifier,config['policy'],schedule_id,revision,self.service.settings.delivery_key,stamp,stamp))
+                           (identifier,config['policy'],schedule_id,revision,self.service.publishing.mode,stamp,stamp))
                 return identifier
             except (ReelError, ValueError, TypeError) as error:
                 db.execute("UPDATE reel_slots SET status='failed',detail=?,updated_at=? WHERE slot=?", (str(error)[:500],now_iso(),slot))
