@@ -1,19 +1,19 @@
-# Estúdio de Reels — Fase 1
+# Estúdio de Reels — pipeline e CLI
 
-Módulo **local e offline** para transformar gravações existentes de gameplay em MP4 vertical, sem reescrever o Auto Posts. A interface desta fase é a CLI `python -m app.reels`. O painel de Reels será integrado na Fase 2; geração/publicação agendada e Meta Reels pertencem à Fase 3.
+Módulo **local e offline** para transformar gravações existentes de gameplay em MP4 vertical, sem reescrever o Auto Posts. A CLI `python -m app.reels` da Fase 1 permanece disponível. A Fase 2 já oferece [geração pelo painel web](reels-web.md); geração/publicação agendada e Meta Reels pertencem à Fase 3.
 
 ## Arquitetura existente e extensão escolhida
 
 | Componente existente | Responsabilidade | Como foi preservado |
 | --- | --- | --- |
-| `app/main.py` | FastAPI, painel, autenticação, sessão e endpoints | Nenhuma nova rota nem modificação nesta fase |
+| `app/main.py` | FastAPI, painel, autenticação, sessão e endpoints | Fase 1 sem novas rotas; Fase 2 adiciona rotas privadas e supervisor, preservando as rotas anteriores |
 | `app/db.py` | SQLite, posts de imagem, identidade, eventos e automação | Tabelas e registros anteriores mantidos; o novo repositório usa `Database.connect()` |
 | `app/publisher.py` / `app/automation.py` | Fila assíncrona e rotina de publicação de imagem | Não recebem vídeos nem executam FFmpeg; o render não bloqueia seu event loop |
 | `app/meta.py` | Graph API para publicação de imagens | Integração existente preservada; publicação de Reels não implementada |
 | `.data/media` | JPEGs públicos para a Meta | Gameplays e Reels não entram nessa pasta nem são expostos por StaticFiles |
 | Testes anteriores | 21 testes funcionais | Mantidos, sem remover ou enfraquecer assertions |
 
-`app/reels/library.py` cria, de forma aditiva, `reel_assets`, `reel_jobs` e `reel_job_events` no mesmo `marketing.sqlite3`. Não altera a marca existente nem ativa a automação. O render ocorre em processo CLI separado e trava apenas outro render do Estúdio, não o worker de posts de imagem. Ainda não há fila em background para Reels: a CLI executa o job sincronamente e registra progresso no SQLite para consulta por outro terminal.
+`app/reels/library.py` cria, de forma aditiva, `reel_assets`, `reel_jobs` e `reel_job_events` no mesmo `marketing.sqlite3`. Não altera a marca existente nem ativa a automação. O render ocorre em processo CLI separado e trava apenas outro render do Estúdio, não o worker de posts de imagem. A CLI executa o job sincronamente e registra progresso no SQLite. A [fila web da Fase 2](reels-web.md) usa um processo filho por job e reutiliza o mesmo renderizador.
 
 ### Pipeline da Fase 1
 
@@ -173,7 +173,7 @@ node --check app/web/login.js
 ## Limites e próximas fases
 
 - **Fase 1 entregue:** biblioteca, roteiro local, voz offline, legendas, montagem, exportação, progresso/falhas e CLI.
-- **Fase 2:** nova página no painel, importação autenticada, edição das configurações, fila de render fora do processo ASGI e download/preview autenticados.
+- **Fase 2 entregue:** nova página no painel, importação autenticada, edição das configurações, fila de render fora do processo ASGI e download/preview autenticados.
 - **Fase 3:** dois horários diários, **12h30 e 19h30**, de segunda a sábado, em `America/Sao_Paulo`. `docs/examples/reels-schedule.example.json` é apenas contrato futuro desativado. A rotina atual de imagens tem uma ocorrência por dia; não se deve reutilizar sua chave única por data para duas publicações de Reels. Serão necessários slots por data, horário, modo e conta, aprovação explícita e verificação da documentação oficial vigente da Meta antes de implementar o envio de vídeo.
 - **Fase 4:** importar cenas cinematográficas e um manifesto de planos exportados do Roblox Studio em plataforma suportada, mantendo referências aos arquivos reais e seus intervalos. Nenhuma cena que ainda não foi gravada será inventada pelo pipeline. **Não se pressupõe Roblox Studio nativo no Ubuntu.** O Ubuntu executa este módulo de edição sobre arquivos já capturados ou exportados.
 

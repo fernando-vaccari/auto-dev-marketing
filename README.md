@@ -6,7 +6,7 @@ Estúdio de criação e publicação de conteúdo para Instagram, voltado ao pú
 
 [Baixar o projeto em ZIP](auto-posts.zip) · [Guia de implantação gratuita](docs/cloud-free.md)
 
-## Estúdio de Reels para RPG no Roblox — Fase 1
+## Estúdio de Reels para RPG no Roblox — Fases 1 e 2
 
 O repositório agora inclui um módulo local de edição para Ubuntu 24.04, mantendo o painel, autenticação, SQLite, agendamentos e integração Meta existentes. Ele importa MP4/MOV/WebM reais, cria roteiros pt-BR baseados nos temas declarados das gravações, narra offline com eSpeak NG ou Piper local e exporta Reels de 15 a 60 segundos em 1080×1920, H.264/AAC, com legendas sincronizadas, cortes, zoom leve e trilha opcional.
 
@@ -18,7 +18,7 @@ bash scripts/install-reels.sh
 
 [Como gerar seu primeiro Reel com gameplay real](docs/reels.md) · [Arquitetura, limites e próximas fases](docs/reels.md#limites-e-próximas-fases)
 
-A Fase 1 usa CLI; a nova página no painel será feita na Fase 2. **Reels não são publicados ou agendados automaticamente nesta entrega.** Os horários 12h30/19h30, de segunda a sábado em São Paulo, estão documentados como configuração futura desativada. O uso local não exige GPU dedicada ou APIs pagas e não pressupõe Roblox Studio nativo no Ubuntu.
+A página **Estúdio de Reels** já permite importar, configurar, gerar, acompanhar, cancelar, reproduzir e baixar pelo navegador, com login obrigatório. [Instalação e uso da Fase 2](docs/reels-web.md). A CLI da Fase 1 permanece disponível. **Reels não são publicados ou agendados automaticamente nesta entrega.** Os horários 12h30/19h30, de segunda a sábado em São Paulo, estão documentados como configuração futura desativada. O uso local não exige GPU dedicada ou APIs pagas e não pressupõe Roblox Studio nativo no Ubuntu.
 
 ![Painel Auto Posts](docs/screenshots/desktop.png)
 
@@ -68,7 +68,7 @@ Veja o roteiro completo em [Implantação gratuita](docs/cloud-free.md). Nenhum 
 | `DATA_DIR` | Banco, imagens, chave de sessão e trava | `.data` |
 | `APP_HOST` / `APP_PORT` | Interface e porta | `127.0.0.1` / `8000` |
 | `APP_TIMEZONE` | Fuso do calendário e histórico | `America/Sao_Paulo` |
-| `APP_PASSWORD` | Senha do painel; obrigatória no modo real ou ao expor o servidor | Sem valor |
+| `APP_PASSWORD` | Senha do painel; obrigatória para Reels, no modo real ou ao expor o servidor | Sem valor |
 | `META_ACCESS_TOKEN` | Token com acesso à conta profissional | Sem valor |
 | `INSTAGRAM_ACCOUNT_ID` | ID numérico da conta Instagram profissional | Sem valor |
 | `PUBLIC_BASE_URL` | Origem HTTPS pública, sem caminho | Sem valor |
