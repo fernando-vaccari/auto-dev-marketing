@@ -8,6 +8,7 @@ import signal
 import sys
 import time
 
+from .automation import ReelAutomation
 from .library import ReelLibrary
 from .tools import ReelError
 
@@ -25,6 +26,8 @@ class ReelService:
         self.control = asyncio.Lock()
         (self.library.root / 'uploads').mkdir(exist_ok=True)
         (self.library.root / 'worker-logs').mkdir(exist_ok=True)
+        self.automation = ReelAutomation(self)
+        self.last_tick = 0
 
     def storage(self):
         used = 0
@@ -125,6 +128,9 @@ class ReelService:
 
     async def _run(self):
         while not self.closing:
+            if time.monotonic() - self.last_tick >= 15:
+                await asyncio.to_thread(self.automation.tick)
+                self.last_tick = time.monotonic()
             with self.library.db.connect() as db:
                 row = db.execute("SELECT id FROM reel_jobs WHERE origin='web' AND status='queued' AND cancel_requested=0 ORDER BY created_at LIMIT 1").fetchone()
             if not row:

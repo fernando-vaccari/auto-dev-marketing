@@ -9,7 +9,9 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from zoneinfo import ZoneInfo
+from datetime import datetime, timezone
 
 from .library import VIDEO_EXTENSIONS, MUSIC_EXTENSIONS, normalize_themes
 from .planning import RenderOptions, build_plan
@@ -20,7 +22,7 @@ from .service import MIB
 
 class Creation(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
-    asset_ids: list[str] = Field(min_length=1, max_length=30)
+    asset_ids: list[str] = Field(default_factory=list, max_length=30)
     title: str = Field(min_length=1, max_length=80)
     duration: int = Field(ge=15, le=60, strict=True)
     themes: list[str] = Field(default_factory=list, max_length=8)
@@ -29,6 +31,34 @@ class Creation(BaseModel):
     music_id: str | None = None
     fit: str = Field(default='contain', pattern='^(contain|crop)$')
     zoom: float = Field(default=.02, ge=0, le=.06, allow_inf_nan=False)
+
+
+class ScheduleConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    name: str = Field(default='Reels do RPG', min_length=1, max_length=80)
+    enabled: bool = False
+    days: list[int] = Field(default=[0,1,2,3,4,5],min_length=1,max_length=7)
+    times: list[str] = Field(default=['12:30','19:30'],min_length=1,max_length=4)
+    timezone: str = 'America/Sao_Paulo'
+    quantity: int = Field(default=1,ge=1,le=3)
+    policy: str = Field(default='approval',pattern='^(manual|approval|automatic)$')
+    auto_authorized: bool = False
+    grace_minutes: int = Field(default=30,ge=1,le=120)
+    template: Creation
+
+    @model_validator(mode='after')
+    def valid(self):
+        if len(set(self.days)) != len(self.days) or any(day not in range(7) for day in self.days):
+            raise ValueError('Dias inválidos ou repetidos.')
+        if len(set(self.times)) != len(self.times) or any(not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',t) for t in self.times):
+            raise ValueError('Horários inválidos ou repetidos.')
+        try:
+            ZoneInfo(self.timezone)
+        except (KeyError, ValueError):
+            raise ValueError('Fuso horário inválido.') from None
+        if self.policy == 'automatic' and not self.auto_authorized:
+            raise ValueError('A política automática exige autorização explícita.')
+        return self
 
 
 def router(service):
@@ -58,6 +88,44 @@ def router(service):
         values.update(asset_ids=tuple(body.asset_ids), themes=tuple(body.themes),
                       threads=settings.reels_threads, piper_model=os.getenv('REELS_PIPER_MODEL') if body.tts == 'piper' else None)
         return RenderOptions(**values)
+
+    @api.get('/schedules')
+    def schedules():
+        result = service.automation.schedules()
+        for item in result:
+            item.pop('config_json', None)
+            item['config']['template'].pop('piper_model',None)
+        return result
+
+    @api.post('/schedules', status_code=201)
+    def schedule_create(body: ScheduleConfig):
+        config = body.model_dump()
+        config['template'] = options(body.template).to_dict()
+        return {'id':service.automation.save(config)}
+
+    @api.put('/schedules/{identifier}')
+    def schedule_edit(identifier: str, body: ScheduleConfig):
+        if not any(item['id']==identifier for item in service.automation.schedules()):
+            raise HTTPException(404,'Agendamento não encontrado.')
+        config=body.model_dump(); config['template']=options(body.template).to_dict()
+        return {'id':service.automation.save(config,identifier)}
+
+    @api.delete('/schedules/{identifier}')
+    def schedule_delete(identifier: str):
+        service.automation.delete(identifier)
+        return {'deleted':True}
+
+    @api.post('/schedules/{identifier}/run')
+    def schedule_run(identifier: str):
+        found=next((s for s in service.automation.schedules() if s['id']==identifier),None)
+        if not found: raise HTTPException(404,'Agendamento não encontrado.')
+        slot='manual:'+uuid.uuid4().hex
+        job=service.automation.enqueue(found['config'],slot=slot,schedule_id=identifier,revision=found['revision'])
+        return {'job_id':job,'slot':slot}
+
+    @api.get('/schedule-history')
+    def schedule_history():
+        return service.automation.history()
 
     @api.get('/config')
     def config():
