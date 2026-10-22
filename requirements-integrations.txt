@@ -1,3 +1,5 @@
 # Motores locais/integrações opcionais; sem API de IA paga.
 cryptography==46.0.3
 websockets==15.0.1
+cffi==2.1.1
+pycparser==3.11

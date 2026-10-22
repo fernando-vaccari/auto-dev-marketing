@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$project_dir"
+case "${1:-}" in
+  instalar) shift; exec bash scripts/install-all.sh "$@" ;;
+  iniciar) exec .venv/bin/python -m app ;;
+  testar) export REELS_REQUIRE_TOOLS=1 REELS_REQUIRE_NEURAL=1; exec .venv/bin/python -m unittest discover -v ;;
+  diagnosticar) exec .venv/bin/python scripts/diagnose.py ;;
+  *) echo 'Uso: bash scripts/auto-posts {instalar [--com-obs]|iniciar|testar|diagnosticar}' >&2; exit 2 ;;
+esac

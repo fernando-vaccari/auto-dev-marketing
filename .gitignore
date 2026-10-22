@@ -21,3 +21,16 @@ test-results/
 *.[aA][aA][cC]
 *.onnx
 *.onnx.json
+
+# Pacotes neurais e gravações OBS locais.
+voices-v*.bin
+*.[mM][kK][vV]
+
+# Estado privado também quando DATA_DIR usa outro nome dentro do checkout.
+marketing.sqlite3*
+session.key
+**/reels/imports/
+**/reels/jobs/
+**/reels/captures/
+**/reels/secrets/
+**/reels/models/
