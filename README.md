@@ -1,5 +1,7 @@
 # Auto Posts
 
+**Minha Voz (opcional):** gravação privada, perfis locais e integração isolada OpenVoice V2 + Kokoro pt-BR. [Instalação e limitações](docs/voice-cloning.md). A síntese real permanece pendente enquanto os pesos oficiais não forem obtidos e testados.
+
 Produção local de conteúdo para Instagram, com trailers para RPGs no Roblox e os recursos de marketing digital já existentes.
 
 **Fernando Vaccari Pickhardt--Dev--Web** aparece na capa do painel e nas artes. Nome, assinatura, público, tom, cor e chamada para ação são editáveis em **Minha marca**.
