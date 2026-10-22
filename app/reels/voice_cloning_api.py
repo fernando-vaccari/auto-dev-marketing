@@ -59,7 +59,7 @@ def router(service):
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise HTTPException(409, 'Outro upload está em andamento.') from None
-            service.require_space(length + 12 * 1024 * 1024)
+            service.require_space(2 * length + 12 * 1024 * 1024)
             count = 0
             try:
                 with temporary.open('xb') as target:
