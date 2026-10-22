@@ -8,6 +8,8 @@ import signal
 import sys
 import time
 
+from .capture import CaptureStudio
+from .preferences import Preferences, Secrets
 from .automation import ReelAutomation
 from .library import ReelLibrary
 from .tools import ReelError
@@ -28,6 +30,10 @@ class ReelService:
         (self.library.root / 'worker-logs').mkdir(exist_ok=True)
         self.automation = ReelAutomation(self)
         self.last_tick = 0
+        self.preferences = Preferences(self.library)
+        self.secrets = Secrets(self.library.root)
+        self.capture = CaptureStudio(self)
+        self.support_task = None
 
     def storage(self):
         used = 0
@@ -68,6 +74,7 @@ class ReelService:
             self.library.update_job(job_id, 'failed', 'interrupted', 0,
                                     error='O servidor reiniciou durante o render. Crie um novo job.')
         self.task = asyncio.create_task(self._run())
+        self.support_task = asyncio.create_task(self._support())
 
     @staticmethod
     async def terminate(process):
@@ -95,6 +102,14 @@ class ReelService:
             if not job['cancel_requested'] and job['status'] != 'ready':
                 self.library.update_job(job_id, 'failed', 'interrupted', job['progress'],
                                         error='O servidor foi encerrado durante o render.')
+        if self.capture.owned_id:
+            try:
+                await asyncio.to_thread(self.capture.finish, self.capture.owned_id)
+            except ReelError:
+                pass
+        if self.support_task:
+            await self.support_task
+            self.support_task = None
         if self.task:
             await self.task
             self.task = None
@@ -126,8 +141,16 @@ class ReelService:
                       OPENBLAS_NUM_THREADS=str(self.settings.reels_threads))
         return result
 
+    async def _support(self):
+        while not self.closing:
+            await asyncio.to_thread(self.capture.tick)
+            await asyncio.sleep(1)
+
     async def _run(self):
         while not self.closing:
+            if self.capture.owned_id:
+                await asyncio.sleep(.3)
+                continue
             if time.monotonic() - self.last_tick >= 15:
                 await asyncio.to_thread(self.automation.tick)
                 self.last_tick = time.monotonic()

@@ -1,0 +1,127 @@
+<?xml version='1.0' encoding='utf-8'?>
+<roblox version="4"><Item class="Folder" referent="AutoPostsCapture"><Properties><string name="Name">AutoPostsCapture</string></Properties><Item class="ModuleScript" referent="CameraController"><Properties><string name="Name">CameraController</string><ProtectedString name="Source">-- Auto Posts: câmera local em jogo autorizado. Não acessa disco, OBS ou senhas.
+local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+local Players = game:GetService("Players")
+local Controller = {}
+local running = false
+local cancelled = false
+
+local function resolve(path)
+    local current = workspace
+    for component in string.gmatch(path, "[^/]+") do
+        current = current:FindFirstChild(component)
+        if not current then error("Associe um objeto real ao caminho: " .. path) end
+    end
+    return current
+end
+local function position(object)
+    if object:IsA("BasePart") then return object.Position end
+    if object:IsA("Model") then return object:GetPivot().Position end
+    error("O foco precisa ser uma BasePart ou Model real.")
+end
+function Controller.cancel()
+    cancelled = true
+end
+function Controller.play(sequence)
+    if running then return false, "Já existe uma sequência em execução." end
+    local camera = workspace.CurrentCamera
+    if not camera then return false, "Câmera indisponível." end
+    -- Valida todos os pontos antes de ocultar interfaces ou iniciar o movimento.
+    local ok, points = pcall(function()
+        assert(type(sequence.points)=="table" and #sequence.points&gt;=1, "Configure os pontos da sequência.")
+        local found = {}
+        for _, point in ipairs(sequence.points) do
+            assert(type(point.duration)=="number" and point.duration&gt;=0.1 and point.duration&lt;=60, "Duração inválida.")
+            local marker=resolve(point.camera)
+            assert(marker:IsA("BasePart"), "O ponto de câmera deve ser BasePart.")
+            local focus=point.focus and point.focus~="" and resolve(point.focus) or nil
+            if focus then position(focus) end
+            table.insert(found,{marker=marker,focus=focus,duration=point.duration,fov=math.clamp(point.fov or marker:GetAttribute("FOV") or 60,20,100),pan=point.pan or 0,cut=point.cut==true})
+        end
+        return found
+    end)
+    if not ok then return false, tostring(points) end
+    running=true;cancelled=false
+    local old={type=camera.CameraType,subject=camera.CameraSubject,cframe=camera.CFrame,fov=camera.FieldOfView}
+    local enabled={}
+    local playerGui=Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if sequence.hideUI and playerGui then
+        for _, gui in ipairs(playerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") then enabled[gui]=gui.Enabled;gui.Enabled=false end
+        end
+    end
+    local core={}
+    if sequence.hideUI then
+        for _, kind in ipairs(Enum.CoreGuiType:GetEnumItems()) do
+            if kind~=Enum.CoreGuiType.All then
+                local success,value=pcall(function() return StarterGui:GetCoreGuiEnabled(kind) end)
+                if success then core[kind]=value;pcall(function() StarterGui:SetCoreGuiEnabled(kind,false) end) end
+            end
+        end
+    end
+    local success, message=pcall(function()
+        camera.CameraType=Enum.CameraType.Scriptable
+        for _, point in ipairs(points) do
+            if cancelled then break end
+            local start=camera.CFrame
+            local fov=camera.FieldOfView
+            if point.cut then start=point.marker.CFrame;fov=point.fov end
+            local elapsed=0
+            while elapsed&lt;point.duration and not cancelled do
+                elapsed+=RunService.RenderStepped:Wait()
+                local alpha=math.clamp(elapsed/point.duration,0,1)
+                local smooth=alpha*alpha*(3-2*alpha)
+                local target=point.marker.CFrame*CFrame.Angles(0,math.rad(point.pan)*alpha,0)
+                local value=start:Lerp(target,smooth)
+                if point.focus then
+                    local focusPosition=position(point.focus)
+                    if (focusPosition-value.Position).Magnitude&gt;0.001 then value=CFrame.lookAt(value.Position,focusPosition) end
+                end
+                camera.CFrame=value;camera.FieldOfView=fov+(point.fov-fov)*smooth
+            end
+        end
+    end)
+    camera.CFrame=old.cframe;camera.FieldOfView=old.fov
+    camera.CameraSubject=old.subject;camera.CameraType=old.type
+    for gui,value in pairs(enabled) do if gui.Parent then gui.Enabled=value end end
+    for kind,value in pairs(core) do pcall(function() StarterGui:SetCoreGuiEnabled(kind,value) end) end
+    running=false
+    return success, message
+end
+return Controller
+</ProtectedString></Properties></Item><Item class="ModuleScript" referent="Sequences"><Properties><string name="Name">Sequences</string><ProtectedString name="Source">-- São referências configuráveis a marcadores de câmera, não mapas ou cenas geradas.
+-- Crie/associe cada marcador real em Workspace/AutoPostsCameras antes de executar.
+local names={"Cidade medieval","Castelo","Floresta","Caverna","Combate","Magia","NPC","Exploração"}
+local ids={"cidade","castelo","floresta","caverna","combate","magia","npc","exploracao"}
+local sequences={}
+for index,name in ipairs(names) do
+    sequences[index]={id=ids[index],name=name,hideUI=true,points={
+        {camera="AutoPostsCameras/"..ids[index].."_inicio",duration=5,fov=65,cut=true},
+        {camera="AutoPostsCameras/"..ids[index].."_fim",duration=10,fov=55},
+    }}
+end
+-- Para foco móvel: acrescente focus="Pasta/PersonagemReal" no ponto.
+-- Para panorama: pan=25. Sobrevoo/travelling: posicione marcadores reais no trajeto.
+return sequences
+</ProtectedString></Properties></Item><Item class="LocalScript" referent="Client"><Properties><string name="Name">Client</string><ProtectedString name="Source">-- Mova este LocalScript para StarterPlayer/StarterPlayerScripts.
+-- Mantenha CameraController e Sequences em ReplicatedStorage/AutoPostsCapture.
+local UserInputService=game:GetService("UserInputService")
+local package=game:GetService("ReplicatedStorage"):WaitForChild("AutoPostsCapture")
+local controller=require(package:WaitForChild("CameraController"))
+local sequences=require(package:WaitForChild("Sequences"))
+local selected=1
+UserInputService.InputBegan:Connect(function(input,processed)
+    if processed then return end
+    if input.KeyCode==Enum.KeyCode.F7 then
+        selected=selected%#sequences+1
+        print("Auto Posts: "..sequences[selected].name)
+    elseif input.KeyCode==Enum.KeyCode.F8 then
+        task.spawn(function()
+            local success,message=controller.play(sequences[selected])
+            if not success then warn("Auto Posts: "..tostring(message)) end
+        end)
+    elseif input.KeyCode==Enum.KeyCode.F9 then controller.cancel() end
+end)
+print("Auto Posts: F7 seleciona; F8 executa; F9 cancela. Sequências dependem de pontos reais configurados.")
+</ProtectedString></Properties></Item></Item></roblox>

@@ -61,6 +61,23 @@ class ScheduleConfig(BaseModel):
         return self
 
 
+class OBSConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    port: int = Field(default=4455,ge=1024,le=65535)
+    password: str | None = Field(default=None,max_length=1024)
+
+class CaptureConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    input_name: str = Field(min_length=1,max_length=200)
+    scene_name: str = Field(min_length=1,max_length=200)
+    sequence: str = Field(default='Exploração',max_length=80)
+    themes: list[str] = Field(default=['gameplay'],max_length=8)
+    duration: int = Field(default=30,ge=5,le=120)
+    lead_seconds: int = Field(default=5,ge=0,le=15)
+    directory: str = Field(default='gravacoes',pattern=r'^[a-zA-Z0-9_-]{1,64}$')
+    game_confirmed: bool = False
+
+
 def router(service):
     api = APIRouter(prefix='/api/reels')
     library, settings = service.library, service.settings
@@ -88,6 +105,39 @@ def router(service):
         values.update(asset_ids=tuple(body.asset_ids), themes=tuple(body.themes),
                       threads=settings.reels_threads, piper_model=os.getenv('REELS_PIPER_MODEL') if body.tts == 'piper' else None)
         return RenderOptions(**values)
+
+    @api.get('/capture/config')
+    def obs_config():
+        return service.preferences.get('obs',{'port':4455}) | {'password_configured':bool(service.secrets.get('obs_password')),'mode':'assisted'}
+
+    @api.put('/capture/config')
+    def obs_save(body: OBSConfig):
+        service.preferences.set('obs',{'port':body.port})
+        if body.password is not None:service.secrets.set('obs_password',body.password)
+        return {'saved':True}
+
+    @api.get('/capture/status')
+    def capture_status():
+        return service.capture.status()
+
+    @api.get('/capture/history')
+    def capture_history():
+        values=service.capture.history()
+        for value in values:value.pop('config_json',None)
+        return values
+
+    @api.post('/capture/start',status_code=201)
+    def capture_start(body: CaptureConfig):
+        config=body.model_dump();config['themes']=normalize_themes(config['themes'])
+        return service.capture.start(config)
+
+    @api.post('/capture/{identifier}/stop')
+    def capture_stop(identifier: str):
+        return service.capture.finish(identifier)
+
+    @api.get('/capture/package')
+    def capture_package():
+        return FileResponse(Path(__file__).resolve().parents[2]/'roblox'/'AutoPostsCapture.rbxmx',filename='AutoPostsCapture.rbxmx')
 
     @api.get('/schedules')
     def schedules():
