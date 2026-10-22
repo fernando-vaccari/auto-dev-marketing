@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="pt-BR">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f7f6f2"><title>Auto Posts · Seu estúdio de conteúdo</title><link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/reels.css"><script src="/static/app.js" defer></script><script src="/static/reels.js" defer></script><script src="/static/studio.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f7f6f2"><title>Auto Posts · Seu estúdio de conteúdo</title><link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/reels.css"><script src="/static/app.js" defer></script><script src="/static/reels.js" defer></script><script src="/static/studio.js" defer></script><script src="/static/my-voice.js" defer></script></head>
 <body>
 <aside class="sidebar">
   <a class="wordmark" href="/" aria-label="Auto Posts, início"><div class="logo-mark">a<span>✳</span></div><div>auto<span>posts</span></div></a>
@@ -38,10 +38,30 @@
     <p id="reels-notice" class="info-box" role="status">Carregando o Estúdio…</p>
     <div id="reels-workspace" hidden>
       <nav id="studio-tabs" class="studio-tabs" aria-label="Seções do Estúdio">
-        <button type="button" data-studio-tab="create" class="secondary active">Criar Reel</button><button type="button" data-studio-tab="trailers" class="secondary">Trailers</button><button type="button" data-studio-tab="capture" class="secondary">Roblox Capture</button><button type="button" data-studio-tab="library" class="secondary">Biblioteca</button><button type="button" data-studio-tab="voice" class="secondary">Narração IA</button><button type="button" data-studio-tab="automation" class="secondary">Automações</button><button type="button" data-studio-tab="instagram" class="secondary">Instagram</button><button type="button" data-studio-tab="settings" class="secondary">Configurações</button>
+        <button type="button" data-studio-tab="create" class="secondary active">Criar Reel</button><button type="button" data-studio-tab="trailers" class="secondary">Trailers</button><button type="button" data-studio-tab="capture" class="secondary">Roblox Capture</button><button type="button" data-studio-tab="library" class="secondary">Biblioteca</button><button type="button" data-studio-tab="voice" class="secondary">Narração IA</button><button type="button" data-studio-tab="my-voice" class="secondary">Minha Voz</button><button type="button" data-studio-tab="automation" class="secondary">Automações</button><button type="button" data-studio-tab="instagram" class="secondary">Instagram</button><button type="button" data-studio-tab="settings" class="secondary">Configurações</button>
       </nav>
       <p id="studio-publishing-notice" class="info-box">Instagram Reels em modo demonstração.</p>
       <section data-studio-panel="trailers" class="card reels-card" hidden><h2>Trailers cinematográficos</h2><p class="help">Os presets editam suas gravações reais. O acabamento depende do material, da música e das câmeras que você preparou.</p><div id="studio-presets" class="studio-presets"></div></section>
+      <section data-studio-panel="my-voice" class="card reels-card" hidden>
+        <h2>Minha Voz</h2><p class="help">Narração local por referência, sem enviar sua gravação para serviços externos. A semelhança não é perfeita e o ritmo vem da voz-base Dora pt-BR. Use apenas sua voz ou uma voz autorizada.</p>
+        <p id="my-voice-runtime" role="status"></p>
+        <label>Nome do perfil<input id="my-voice-name" maxlength="60" value="Minha Voz"></label>
+        <label class="checkbox-label"><input id="my-voice-consent" type="checkbox"> A voz é minha ou tenho autorização explícita para cloná-la e utilizá-la neste conteúdo.</label>
+        <div class="reels-fields"><button id="my-voice-record" type="button" class="secondary">Gravar pelo microfone</button><button id="my-voice-stop" type="button" class="secondary" disabled>Encerrar gravação</button></div>
+        <label>Ou importar WAV/MP3 (6 a 60 segundos, até 20 MiB)<input id="my-voice-file" type="file" accept="audio/wav,audio/mpeg,.wav,.mp3"></label>
+        <p class="help">Recomenda-se 15 a 30 segundos de fala limpa, sem música. O microfone exige localhost ou HTTPS e sua permissão no navegador. A validação técnica não reconhece quem está falando.</p>
+        <audio id="my-voice-local-player" controls hidden></audio><progress id="my-voice-progress" max="100" value="0" hidden></progress>
+        <button id="my-voice-save" type="button" class="primary">Validar e salvar amostra</button>
+        <p id="my-voice-status" role="status"></p><div id="my-voice-profiles"></div>
+        <label>Perfil para narrar<select id="my-voice-selection"><option value="">Selecione um perfil</option></select></label>
+        <label>Frase de teste<textarea id="my-voice-text" maxlength="600" rows="3">Acompanhe o desenvolvimento do meu RPG medieval no Roblox.</textarea></label>
+        <button id="my-voice-preview" type="button" class="secondary">Gerar prévia com Minha Voz</button><button id="my-voice-cancel" type="button" class="secondary" disabled>Cancelar prévia</button>
+        <p id="my-voice-preview-status" role="status"></p><audio id="my-voice-preview-player" controls hidden></audio>
+        <label class="checkbox-label"><input id="my-voice-approved" type="checkbox"> Ouvi a prévia e aprovo o uso deste perfil nas novas narrações.</label>
+        <button id="my-voice-use" type="button" class="primary">Usar Minha Voz nos próximos Reels</button><button id="my-voice-clear-default" type="button" class="secondary">Voltar à voz padrão</button>
+        <p class="help">Reels novos terão uma nova síntese do roteiro. Jobs e agendamentos existentes mantêm suas escolhas. Ao excluir o perfil, amostra original e áudios intermediários são apagados; MP4s prontos só são apagados se você marcar essa opção.</p>
+        <label class="checkbox-label"><input id="my-voice-delete-exports" type="checkbox"> Ao excluir um perfil, excluir também os Reels prontos gerados com ele.</label>
+      </section>
       <section data-studio-panel="voice" class="card reels-card" hidden><h2>Narração por IA</h2><p class="help">Kokoro é neural e funciona em CPU após a instalação local. eSpeak é a alternativa básica. Estilos mudam o texto; não simulamos controles de emoção do sintetizador.</p>
         <div class="reels-fields"><label>Voz neural pt-BR<select id="studio-voice-id"><option value="pf_dora">Dora · pt-BR</option><option value="pm_alex">Alex · pt-BR</option><option value="pm_santa">Santa · pt-BR</option></select></label><label>Velocidade (0,85 a 1,15)<input id="studio-speed" type="number" min="0.85" max="1.15" step="0.05" value="1"></label><label>Volume da voz (0,5 a 1,5)<input id="studio-volume" type="number" min="0.5" max="1.5" step="0.1" value="1"></label></div>
         <label>Texto da prévia<textarea id="studio-preview-text" maxlength="600" rows="3">Confira estas gravações do projeto. Acompanhe o desenvolvimento do nosso RPG.</textarea></label><p class="help">A prévia usa o motor e a duração escolhidos em Criar Reel. A voz neural pode ser selecionada quando o Kokoro estiver instalado.</p><button type="button" class="primary" id="studio-preview">Gerar prévia de voz</button><p id="studio-preview-status" role="status"></p><audio id="studio-preview-player" controls hidden></audio><p class="help">Para instalar a voz neural, use o instalador da voz descrito no guia. O render nunca baixa modelos.</p>

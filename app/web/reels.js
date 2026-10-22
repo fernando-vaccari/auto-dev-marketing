@@ -105,7 +105,7 @@
       config=await request('/config'); q('notice').textContent='Processamento local e privado. Revise o vídeo exportado antes de qualquer publicação.';
       q('workspace').hidden=false;
       const voice=q('voice').value; q('voice').replaceChildren();
-      for (const name of config.voices) q('voice').append(new Option(name === 'kokoro' ? 'Kokoro · voz neural pt-BR' : name === 'piper' ? 'Piper · modelo pt-BR local' : 'eSpeak NG · offline',name));
+      for (const name of config.voices) q('voice').append(new Option(name === 'my_voice' ? 'Minha Voz · perfil local' : name === 'kokoro' ? 'Kokoro · voz neural pt-BR' : name === 'piper' ? 'Piper · modelo pt-BR local' : 'eSpeak NG · offline',name));
       if (q('voice').dataset.chosen && config.voices.includes(voice)) q('voice').value=voice;
       else if(config.voices.includes('kokoro')) q('voice').value='kokoro';
       q('generate').disabled=!config.voices.length;
