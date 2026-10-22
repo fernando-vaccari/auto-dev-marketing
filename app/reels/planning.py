@@ -1,5 +1,7 @@
 from dataclasses import asdict, dataclass
 import math
+import re
+from .cinema import PRESETS, CAPTIONS, SCRIPT_STYLES
 
 from .library import normalize_themes
 from .tools import ReelError
@@ -23,6 +25,8 @@ class RenderOptions:
     title: str = 'RPG medieval em desenvolvimento'
     themes: tuple[str, ...] = ()
     music_id: str | None = None
+    effect_id: str | None = None
+    effect_volume: float = .10
     tts: str = 'auto'
     piper_model: str | None = None
     script: str | None = None
@@ -30,6 +34,29 @@ class RenderOptions:
     zoom: float = 0.02
     threads: int = 4
     music_volume: float = 0.12
+    voice_id: str = 'pf_dora'
+    kokoro_dir: str | None = None
+    voice_speed: float = 1.0
+    voice_volume: float = 1.0
+    auto_shorten: bool = True
+    preset: str = 'legacy'
+    caption_style: str = 'preset'
+    caption_font: str = 'DejaVu Sans'
+    caption_size: int = 42
+    caption_color: str = '#FFFFFF'
+    caption_outline: int = 2
+    caption_shadow: int = 1
+    caption_position: str = 'bottom'
+    caption_animation: bool = True
+    highlight_words: tuple[str, ...] = ()
+    selection: str = 'sequential'
+    avoid_reuse: bool = True
+    cuts_override: tuple[dict, ...] | None = None
+    script_style: str = 'informativo'
+    game_name: str = ''
+    confirmed_facts: tuple[str, ...] = ()
+    cta: str = 'Acompanhe o desenvolvimento.'
+    variation: int = 0
 
     def validate(self):
         if type(self.duration) is not int or not 15 <= self.duration <= 60:
@@ -38,7 +65,15 @@ class RenderOptions:
             raise ReelError('Escolha de 1 a 30 vídeos importados, sem IDs repetidos.')
         if not self.title.strip() or len(self.title) > 80:
             raise ReelError('O título deve conter de 1 a 80 caracteres.')
-        if self.fit not in {'contain', 'crop'}:
+        if self.preset not in PRESETS or self.caption_style not in {*CAPTIONS,'preset'} or self.script_style not in SCRIPT_STYLES:
+            raise ReelError('Preset ou estilo inválido.')
+        if self.selection not in {'sequential','quality'} or self.caption_font not in {'DejaVu Sans','DejaVu Sans Bold'}:
+            raise ReelError('Seleção ou fonte inválida.')
+        if not 28 <= self.caption_size <= 64 or not 0 <= self.caption_outline <= 5 or not 0 <= self.caption_shadow <= 4 or self.caption_position not in {'bottom','center','top'} or not re.fullmatch(r'#[A-Fa-f0-9]{6}',self.caption_color):
+            raise ReelError('Configuração de legenda inválida.')
+        if len(self.game_name)>80 or len(self.cta)>100 or len(self.confirmed_facts)>5 or any(len(f)>180 for f in self.confirmed_facts) or len(self.highlight_words)>5 or any(not re.fullmatch(r'[\wÀ-ÿ]{1,24}',w) for w in self.highlight_words):
+            raise ReelError('Informações ou destaques excedem os limites.')
+        if self.fit not in {'contain', 'crop', 'blur'}:
             raise ReelError('Enquadramento inválido: escolha contain ou crop.')
         if not math.isfinite(self.zoom) or not 0 <= self.zoom <= 0.06:
             raise ReelError('O zoom deve ficar entre 0 e 0.06.')
@@ -46,8 +81,12 @@ class RenderOptions:
             raise ReelError('Escolha de 1 a 8 threads; o padrão recomendado é 4.')
         if not math.isfinite(self.music_volume) or not 0 <= self.music_volume <= 0.3:
             raise ReelError('O volume da trilha deve ficar entre 0 e 0.3.')
-        if self.tts not in {'auto', 'espeak', 'piper'}:
+        if not math.isfinite(self.effect_volume) or not 0 <= self.effect_volume <= .3:
+            raise ReelError('Volume de efeito inválido.')
+        if self.tts not in {'auto', 'espeak', 'piper', 'kokoro'}:
             raise ReelError('Narração inválida: escolha auto, espeak ou piper.')
+        if self.voice_id not in {'pf_dora','pm_alex','pm_santa'} or not .85 <= self.voice_speed <= 1.15 or not .5 <= self.voice_volume <= 1.5:
+            raise ReelError('Voz, velocidade ou volume inválidos.')
         if self.script is not None and (not self.script.strip() or len(self.script) > 3000):
             raise ReelError('O roteiro deve conter de 1 a 3000 caracteres.')
 
@@ -92,29 +131,65 @@ def build_plan(library, options):
     required = options.duration * fps
     if sum(capacities.values()) < required:
         raise ReelError(f'As gravações selecionadas têm {sum(capacities.values()) / fps:.2f}s utilizáveis; importe pelo menos {options.duration}s. Não repetimos ou inventamos cenas para completar o vídeo.')
-    cursors = {asset['id']: 0 for asset in selected}
-    remaining = required
-    cuts = []
-    timeline = 0
-    while remaining:
-        for asset in selected:
-            asset_id = asset['id']
-            frames = min(5 * fps, capacities[asset_id] - cursors[asset_id], remaining)
-            if not frames:
-                continue
-            cuts.append({'asset_id': asset_id, 'source_start': cursors[asset_id] / fps,
-                         'duration': frames / fps, 'frames': frames, 'timeline_start': timeline / fps,
-                         'tags': asset['tags']})
-            cursors[asset_id] += frames
-            remaining -= frames
-            timeline += frames
-            if not remaining:
-                break
+    cut_frames=round(PRESETS[options.preset]['cut']*fps)
+    transition=PRESETS[options.preset]['transition']
+    overlap=6 if transition=='dissolve' else 0
+
+    def allocate(budget):
+        if options.selection=='quality':
+            from .analysis import select
+            return select(library,selected,budget,cut_frames,avoid_reuse=options.avoid_reuse)
+        cursors={asset['id']:0 for asset in selected};remaining=budget;result=[]
+        while remaining:
+            for asset in selected:
+                identifier=asset['id'];frames=min(cut_frames,capacities[identifier]-cursors[identifier],remaining)
+                if not frames:continue
+                result.append({'asset_id':identifier,'source_start':cursors[identifier]/fps,'duration':frames/fps,'frames':frames,'tags':asset['tags']})
+                cursors[identifier]+=frames;remaining-=frames
+                if not remaining:break
+        return result
+
+    cuts=allocate(required);warning=''
+    if overlap:
+        for attempt in range(6):
+            budget=required+overlap*(len(cuts)-1)
+            if budget>sum(capacities.values()):
+                overlap=0;transition='fade';warning='Sem margem real para sobreposição: usamos fade e preservamos a duração.';cuts=allocate(required);break
+            try:newcuts=allocate(budget)
+            except ReelError:
+                overlap=0;transition='fade';cuts=allocate(required);break
+            if len(newcuts)==len(cuts):cuts=newcuts;break
+            cuts=newcuts
+        else:
+            overlap=0;transition='fade';cuts=allocate(required)
+    if overlap and any(c['frames']<=2*overlap for c in cuts):
+        overlap=0;transition='fade';cuts=allocate(required)
+    if options.cuts_override:
+        cuts=[]
+        for value in options.cuts_override:
+            identifier=value['asset_id'];start=float(value['source_start']);length=float(value['duration'])
+            if identifier not in capacities or not math.isfinite(start+length) or start<0 or length<=0 or round((start+length)*fps)>capacities[identifier]:
+                raise ReelError('Um corte revisado ultrapassa a gravação disponível.')
+            cuts.append({'asset_id':identifier,'source_start':round(start*fps)/fps,'frames':round(length*fps),'duration':round(length*fps)/fps})
+        if sum(c['frames'] for c in cuts)-overlap*(len(cuts)-1)!=required:
+            raise ReelError('A soma dos cortes revisados e transições deve corresponder à duração escolhida.')
+        for index,cut in enumerate(cuts):
+            for previous in cuts[:index]:
+                if previous['asset_id']==cut['asset_id'] and max(previous['source_start'],cut['source_start'])<min(previous['source_start']+previous['duration'],cut['source_start']+cut['duration']):
+                    raise ReelError('Os cortes revisados não podem repetir o mesmo intervalo.')
+    timeline=0
+    for cut in cuts:
+        cut['timeline_start']=timeline/fps
+        timeline+=cut['frames']-overlap
+    script=options.script.strip() if options.script else make_script(themes, options.duration)
+    if not options.script and (options.game_name or options.script_style!='informativo' or options.confirmed_facts):
+        from .scripts import promotional_script
+        script=promotional_script(themes,options)
     return {'version': 1, 'title': options.title, 'duration': options.duration, 'fps': fps,
             'width': 1080, 'height': 1920, 'themes': themes, 'cuts': cuts,
             'sources': [{'id': asset['id'], 'sha256': asset['sha256'], 'original_name': asset['original_name'],
                          'relative_path': asset['relative_path'], 'metadata': asset['metadata']} for asset in selected],
-            'script': options.script.strip() if options.script else make_script(themes, options.duration),
+            'script': script,
             'script_source': 'user' if options.script else 'local_template',
             'scene_evidence': 'user_declared_tags', 'fit': options.fit, 'zoom': options.zoom,
-            'source_audio': 'muted', 'publishing_enabled': False}
+            'source_audio': 'muted', 'publishing_enabled': False, 'transition':transition,'overlap':overlap/fps,'warning':warning,'preset':options.preset}

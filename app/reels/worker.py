@@ -4,6 +4,9 @@ import ctypes
 import os
 import resource
 import signal
+import json
+from .speech import synthesize_fitting
+from .captions import write_captions
 
 from .library import ReelLibrary
 from .planning import RenderOptions
@@ -42,10 +45,35 @@ def main():
     if not jobs or jobs[0]['origin'] != 'web' or jobs[0]['status'] != 'queued':
         return 2
     config = jobs[0]['config']
+    kind = config.pop('_task', 'reel')
     config['asset_ids'] = tuple(config['asset_ids'])
     config['themes'] = tuple(config['themes'])
     try:
-        ReelStudio(library).render(RenderOptions(**config), job_id=args.job_id)
+        options = RenderOptions(**config)
+        if kind == 'analysis':
+            from .analysis import analyze
+            library.begin_job(args.job_id)
+            directory=library.root/'jobs'/args.job_id;directory.mkdir()
+            results={}
+            for index,identifier in enumerate(options.asset_ids):
+                library.update_job(args.job_id,'rendering','analysis',int(90*index/len(options.asset_ids)))
+                results[identifier]=analyze(library,identifier)
+            (directory/'analysis.json').write_text(json.dumps(results))
+            library.update_job(args.job_id,'ready','ready',100)
+        elif kind == 'voice_preview':
+            library.begin_job(args.job_id)
+            directory=library.root/'jobs'/args.job_id;directory.mkdir()
+            library.update_job(args.job_id,'rendering','narration',10,'Gerando prévia local')
+            result=synthesize_fitting(options.script,directory,engine=options.tts,
+                model=options.kokoro_dir if options.tts=='kokoro' else options.piper_model,
+                duration=options.duration,threads=options.threads,voice_id=options.voice_id,
+                speed=options.voice_speed,volume=options.voice_volume,auto_shorten=options.auto_shorten)
+            (directory/'script.txt').write_text(result['text'],encoding='utf-8')
+            (directory/'narration.json').write_text(json.dumps(result,ensure_ascii=False))
+            write_captions(directory,result,title=options.title,duration=options.duration)
+            library.update_job(args.job_id,'ready','ready',100,output_path=str((directory/'narration.wav').relative_to(library.root)))
+        else:
+            ReelStudio(library).render(options, job_id=args.job_id)
         return 0
     except KeyboardInterrupt:
         # O supervisor decide entre cancelamento e interrupção do servidor.

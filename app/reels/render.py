@@ -7,7 +7,9 @@ import time
 
 from .captions import write_captions
 from .planning import build_plan
-from .speech import synthesize
+from .cinema import grade
+from .analysis import analyze, metrics, record_usage
+from .speech import synthesize_fitting
 from .tools import ReelError, doctor, executable, probe, run
 
 
@@ -55,19 +57,35 @@ class ReelStudio:
                     raise ReelError('FFmpeg e ffprobe são obrigatórios. Execute o instalador do Estúdio de Reels.')
                 if not all(capabilities['filters'].values()) or not all(capabilities['encoders'].values()):
                     raise ReelError('Esta instalação do FFmpeg precisa de libx264, AAC, libass, zoompan e filtros de áudio.')
+                if options.selection == 'quality':
+                    for asset_id in options.asset_ids:
+                        if not metrics(self.library, asset_id):
+                            update('analysis', 5, 'Analisando movimento, exposição e nitidez; sem compreensão semântica')
+                            analyze(self.library, asset_id)
                 plan = build_plan(self.library, options)
                 music = self.library.asset(options.music_id, 'music') if options.music_id else None
                 assets = {asset_id: self.library.asset(asset_id, 'video') for asset_id in options.asset_ids}
                 paths = {key: self.library.asset_path(value, verify=True) for key, value in assets.items()}
                 music_path = self.library.asset_path(music, verify=True) if music else None
+                effect = self.library.asset(options.effect_id, 'effect') if options.effect_id else None
+                effect_path = self.library.asset_path(effect,verify=True) if effect else None
                 (directory / 'plan.json').write_text(json.dumps(plan, ensure_ascii=False, indent=2))
                 (directory / 'script.txt').write_text(plan['script'] + '\n', encoding='utf-8')
                 update('narration', 8, 'Gerando voz local por frases, sem rede')
-                narration = synthesize(plan['script'], directory, engine=options.tts, model=options.piper_model,
-                                       duration=options.duration, threads=options.threads)
+                narration = synthesize_fitting(plan['script'], directory, engine=options.tts,
+                                       model=options.kokoro_dir if options.tts == 'kokoro' else options.piper_model,
+                                       duration=options.duration, threads=options.threads, voice_id=options.voice_id,
+                                       speed=options.voice_speed, volume=options.voice_volume, auto_shorten=options.auto_shorten)
+                plan['script'] = narration['text']
+                (directory / 'script.txt').write_text(plan['script'] + '\n', encoding='utf-8')
+                (directory / 'plan.json').write_text(json.dumps(plan, ensure_ascii=False, indent=2))
                 (directory / 'narration.json').write_text(json.dumps(narration, ensure_ascii=False, indent=2))
                 write_captions(directory, narration, title=options.title, duration=options.duration,
-                               signature=self.library.db.brand().get('signature', ''))
+                               signature=self.library.db.brand().get('signature', ''), options=options)
+                from .voices import _cache
+                _cache.clear()
+                import gc
+                gc.collect()
                 font_dir = directory / 'fonts'
                 font_dir.mkdir()
                 for font in (Path(__file__).parents[1] / 'web' / 'fonts').glob('*.ttf'):
@@ -79,13 +97,17 @@ class ReelStudio:
                     if options.fit == 'contain':
                         filters += ['scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2',
                                     'pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=0x11111b']
+                    elif options.fit == 'blur':
+                        filters += ['split[bgin][fgin];[bgin]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=8:1,scale=1080:1920[back];[fgin]scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2[front];[back][front]overlay=(W-w)/2:(H-h)/2:shortest=1']
                     else:
                         filters += ['scale=1080:1920:force_original_aspect_ratio=increase:force_divisible_by=2', 'crop=1080:1920']
                     filters += ['setsar=1', 'format=yuv420p', 'tpad=stop_mode=clone:stop_duration=0.1']
                     if options.zoom:
                         filters.append(f"zoompan=z='1+{options.zoom}*on/{cut['frames']}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=1:s=1080x1920:fps=30")
+                    filters += grade(options)
                     fade = min(.12, cut['duration'] / 4)
-                    filters += [f"fade=t=in:st=0:d={fade:.3f}", f"fade=t=out:st={max(0, cut['duration'] - fade):.4f}:d={fade:.3f}"]
+                    if plan['transition'] == 'fade':
+                        filters += [f"fade=t=in:st=0:d={fade:.3f}", f"fade=t=out:st={max(0, cut['duration'] - fade):.4f}:d={fade:.3f}"]
                     target = f'cut-{index:03d}.mp4'
                     ffmpeg(['-threads', options.threads, '-ss', f"{cut['source_start']:.6f}", '-protocol_whitelist', 'file,pipe',
                             '-i', paths[cut['asset_id']], '-map', '0:v:0', '-an', '-sn', '-dn', '-filter_threads', '1',
@@ -95,15 +117,40 @@ class ReelStudio:
                     segments.append(f"file '{target}'")
                 (directory / 'cuts.ffconcat').write_text('ffconcat version 1.0\n' + '\n'.join(segments) + '\n')
                 update('compositing', 75, 'Montando títulos, legendas, voz e trilha')
-                args = ['-threads', options.threads, '-f', 'concat', '-safe', '1', '-i', 'cuts.ffconcat', '-i', 'narration.wav']
-                graph = ['[0:v]ass=filename=captions.ass:fontsdir=fonts,format=yuv420p[v]',
-                         '[1:a]loudnorm=I=-16:TP=-2:LRA=11,aresample=48000[voice]']
-                if music:
-                    args += ['-stream_loop', '-1', '-protocol_whitelist', 'file,pipe', '-i', music_path]
-                    graph += [f"[2:a]atrim=duration={options.duration},asetpts=PTS-STARTPTS,aresample=48000,volume={options.music_volume},afade=t=in:d=1,afade=t=out:st={options.duration - 1}:d=1[bgm]",
-                              '[voice][bgm]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=false[a]']
+                args=[];graph=[]
+                if plan['transition']=='dissolve' and len(plan['cuts'])>1:
+                    for index in range(len(plan['cuts'])):
+                        args += ['-threads','1','-i',f'cut-{index:03d}.mp4']
+                    previous='0:v'
+                    for index in range(1,len(plan['cuts'])):
+                        offset=plan['cuts'][index]['timeline_start']
+                        target=f'x{index}'
+                        graph.append(f'[{previous}][{index}:v]xfade=transition=fade:duration={plan["overlap"]}:offset={offset}[{target}]')
+                        previous=target
+                    video_source=previous;voice_index=len(plan['cuts'])
                 else:
-                    graph += ['[voice]alimiter=limit=0.95:level=false[a]']
+                    args=['-threads',options.threads,'-f','concat','-safe','1','-i','cuts.ffconcat']
+                    video_source='0:v';voice_index=1
+                args+=['-i','narration.wav']
+                graph += [f'[{video_source}]ass=filename=captions.ass:fontsdir=fonts,format=yuv420p[v]',
+                          f'[{voice_index}:a]aresample=48000,asplit=2[voice][side]']
+                if music:
+                    args += ['-stream_loop','-1','-protocol_whitelist','file,pipe','-i',music_path]
+                    graph += [f'[{voice_index+1}:a]atrim=duration={options.duration},asetpts=PTS-STARTPTS,aresample=48000,loudnorm=I=-24:TP=-4:LRA=9,volume={options.music_volume},afade=t=in:d=1,afade=t=out:st={options.duration-1}:d=1[bgm]',
+                              '[bgm][side]sidechaincompress=threshold=0.025:ratio=8:attack=20:release=350[ducked]',
+                              '[voice][ducked]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=false[a]']
+                else:
+                    graph += ['[side]anullsink','[voice]alimiter=limit=0.95:level=false[a]']
+                if effect:
+                    effect_index=voice_index+1+(1 if music else 0)
+                    args+=['-protocol_whitelist','file,pipe','-i',effect_path]
+                    graph=[chain.replace('[a]','[bed]') for chain in graph]
+                    points=[cut['timeline_start'] for cut in plan['cuts'][1:]][:12] or [0]
+                    labels=''.join(f'[s{i}]' for i in range(len(points)))
+                    graph.append(f'[{effect_index}:a]atrim=duration=0.8,aresample=48000,volume={options.effect_volume},afade=t=out:st=0.5:d=0.3,asplit={len(points)}{labels}')
+                    for i,point in enumerate(points):graph.append(f'[s{i}]adelay={round(point*1000)}:all=1[fx{i}]')
+                    inputs='[bed]'+''.join(f'[fx{i}]' for i in range(len(points)))
+                    graph.append(f'{inputs}amix=inputs={len(points)+1}:duration=first:normalize=0,alimiter=limit=0.95:level=false[a]')
                 args += ['-filter_complex_threads', '1', '-filter_complex', ';'.join(graph), '-map', '[v]', '-map', '[a]',
                          '-t', options.duration, '-r', '30', '-c:v', 'libx264', '-profile:v', 'high', '-level:v', '4.1',
                          '-preset', 'veryfast', '-crf', '23', '-maxrate', '10M', '-bufsize', '20M', '-pix_fmt', 'yuv420p',
@@ -116,6 +163,8 @@ class ReelStudio:
                 audios = [stream for stream in metadata['streams'] if stream['codec_type'] == 'audio']
                 if not videos or not audios or (videos[0].get('width'), videos[0].get('height')) != (1080, 1920) or videos[0].get('codec_name') != 'h264' or videos[0].get('pix_fmt') != 'yuv420p' or audios[0].get('codec_name') != 'aac' or abs(metadata['duration'] - options.duration) > .1:
                     raise ReelError('O arquivo renderizado não passou na validação de resolução, duração ou codecs.')
+                # Decodificação completa detecta corrupção além dos metadados.
+                ffmpeg(['-i','reel.partial.mp4','-f','null','-'],timeout=max(120,options.duration*5))
                 deliverables = directory / 'deliverables'
                 deliverables.mkdir()
                 target = deliverables / 'reel.mp4'
@@ -124,9 +173,10 @@ class ReelStudio:
                           'elapsed_seconds': round(time.monotonic() - started, 2), 'tts': narration['engine'],
                           'threads': options.threads, 'gpu_used': False, 'network_used': False,
                           'publishing_enabled': False, 'source_audio': 'muted',
-                          'transitions': 'short fade out/in, no overlap', 'intermediates_kept': True}
+                          'transitions': plan['transition'], 'intermediates_kept': True}
                 (directory / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
                 relative = str(target.relative_to(self.library.root))
+                record_usage(self.library,job_id,plan['cuts'])
                 self.library.update_job(job_id, 'ready', 'ready', 100, output_path=relative)
                 self.progress({'job_id': job_id, 'stage': 'ready', 'progress': 100})
                 return report

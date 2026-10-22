@@ -8,6 +8,10 @@ import wave
 from .tools import ReelError, executable, run
 
 
+class SpeechTooLong(ReelError):
+    pass
+
+
 def phrases(text):
     result = []
     for sentence in re.split(r'(?<=[.!?;])\s+', ' '.join(text.split())):
@@ -33,6 +37,11 @@ def wave_duration(path):
 def choose_voice(engine, model=None):
     if engine == 'auto':
         engine = 'piper' if model else 'espeak'
+    if engine == 'kokoro':
+        from .voices import available
+        if not available(model):
+            raise ReelError('Instale o modelo Kokoro local para utilizar narração neural pt-BR.')
+        return engine, []
     if engine == 'piper':
         path = Path(model).expanduser().resolve() if model else None
         if not path or not path.is_file() or not Path(str(path) + '.json').is_file():
@@ -55,7 +64,7 @@ def choose_voice(engine, model=None):
     return engine, [executable('espeak-ng'), '-v', 'pt-br', '-s', '165']
 
 
-def synthesize(text, directory, *, engine='auto', model=None, duration=30, threads=4):
+def synthesize(text, directory, *, engine='auto', model=None, duration=30, threads=4, voice_id='pf_dora', speed=1.0, volume=1.0):
     directory = Path(directory)
     speech_dir = directory / 'speech'
     speech_dir.mkdir(exist_ok=True)
@@ -67,8 +76,13 @@ def synthesize(text, directory, *, engine='auto', model=None, duration=30, threa
         target = speech_dir / f'phrase-{index:03d}.wav'
         args = command + (['-f', str(raw)] if engine == 'piper' else ['-w', str(raw), '--stdin'])
         # Locale pt-BR é explícito no eSpeak. Para Piper, o idioma vem do modelo local escolhido.
-        run(args, input_data=(phrase + '\n').encode(), timeout=120, log=directory / 'render.log')
+        if engine == 'kokoro':
+            from .voices import generate
+            generate(phrase, raw, directory=model, voice=voice_id, threads=threads)
+        else:
+            run(args, input_data=(phrase + '\n').encode(), timeout=120, log=directory / 'render.log')
         run([executable('ffmpeg'), '-nostdin', '-v', 'error', '-y', '-i', raw,
+             '-af', f'silenceremove=start_periods=1:start_duration=0.02:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_duration=0.02:start_threshold=-50dB,areverse,atempo={speed},loudnorm=I=-18:TP=-3:LRA=9,volume={volume},alimiter=limit=0.95:level=false',
              '-ac', '1', '-ar', '48000', '-c:a', 'pcm_s16le', '-threads', str(threads), target],
             log=directory / 'render.log')
         measured = wave_duration(target)
@@ -81,7 +95,7 @@ def synthesize(text, directory, *, engine='auto', model=None, duration=30, threa
     available_frames = round((duration - intro - 0.5) * 48000)
     voice_frames = sum(round(item['duration'] * 48000) for item in timings)
     if voice_frames > available_frames:
-        raise ReelError(f'A narração tem {voice_total:.2f}s e não cabe no Reel de {duration}s. Reduza o roteiro ou aumente a duração; nenhuma palavra foi acelerada ou cortada.')
+        raise SpeechTooLong(f'A narração tem {voice_total:.2f}s e não cabe no Reel de {duration}s. Reduza o roteiro ou aumente a duração; nenhuma palavra foi acelerada ou cortada.')
     gap_frames = min(72000, (available_frames - voice_frames) // max(1, len(timings) - 1))
     audio_path = directory / 'narration.wav'
     cursor = round(intro * 48000)
@@ -105,4 +119,25 @@ def synthesize(text, directory, *, engine='auto', model=None, duration=30, threa
         destination.writeframes(b'\0\0' * max(0, duration * 48000 - cursor))
     return {'engine': engine, 'audio': 'narration.wav', 'speech_duration': voice_total,
             'audio_duration': wave_duration(audio_path), 'cues': cues,
-            'timing_method': 'measured_separate_tts_phrases', 'speed_changed': False}
+            'timing_method': 'measured_separate_tts_phrases', 'speed_changed': speed != 1.0}
+
+
+def synthesize_fitting(text, directory, *, auto_shorten=False, **kwargs):
+    """Refaz o texto e a síntese, nunca corta áudio para caber no vídeo."""
+    attempts=[]
+    for attempt in range(4):
+        try:
+            result=synthesize(text,directory,**kwargs)
+            result.update(text=text,attempts=attempts+[{'attempt':attempt+1,'duration':result['speech_duration']}])
+            return result
+        except SpeechTooLong as error:
+            attempts.append({'attempt':attempt+1,'error':str(error)})
+            if not auto_shorten or attempt==3:raise
+            sentences=re.split(r'(?<=[.!?])\s+',text.strip())
+            if len(sentences)>2:
+                text=sentences[0]+' '+sentences[-1]
+            else:
+                words=text.split()
+                reduced=words[:max(4,int(len(words)*.68))]
+                text=' '.join(reduced).rstrip('.,;:!?')+'.'
+    raise ReelError('Não foi possível ajustar a narração.')

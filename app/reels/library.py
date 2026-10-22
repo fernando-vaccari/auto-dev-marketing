@@ -99,7 +99,7 @@ class ReelLibrary:
     def import_media(self, source, kind='video', tags=(), original_name=None):
         path = Path(source).expanduser().resolve()
         suffix = path.suffix.lower()
-        if kind not in {'video', 'music'}:
+        if kind not in {'video', 'music', 'effect'}:
             raise ReelError('Tipo de mídia inválido.')
         if not path.is_file() or suffix not in (VIDEO_EXTENSIONS if kind == 'video' else MUSIC_EXTENSIONS):
             raise ReelError('Informe um arquivo local MP4/MOV/WebM para vídeo, ou MP3/WAV/OGG/FLAC/M4A/AAC para trilha.')
